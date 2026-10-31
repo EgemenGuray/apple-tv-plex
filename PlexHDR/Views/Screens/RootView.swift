@@ -1,3 +1,4 @@
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 
 struct RootView: View {
@@ -64,15 +65,29 @@ extension View {
 struct SignInView: View {
     @EnvironmentObject private var plex: PlexClient
     @State private var pin: PlexClient.Pin?
+    @State private var qrPin: PlexClient.Pin?
     @State private var error: String?
 
     var body: some View {
         VStack(spacing: 50) {
             Text("Sign in to Plex").font(.largeTitle.bold())
             if let pin {
-                Text("On your phone or computer, go to").foregroundStyle(.secondary)
-                Text("plex.tv/link").font(.system(size: 64, weight: .bold))
-                Text(pin.code).font(.system(size: 120, weight: .heavy, design: .monospaced)).kerning(24)
+                HStack(alignment: .center, spacing: 120) {
+                    VStack(spacing: 24) {
+                        if let qrPin, let qr = QRCode.image(for: plex.authURL(code: qrPin.code)) {
+                            Image(uiImage: qr).interpolation(.none).resizable()
+                                .frame(width: 420, height: 420)
+                                .padding(24).background(.white, in: RoundedRectangle(cornerRadius: 24))
+                        }
+                        Text("Scan with your phone").foregroundStyle(.secondary)
+                    }
+                    VStack(spacing: 30) {
+                        Text("Or go to").foregroundStyle(.secondary)
+                        Text("plex.tv/link").font(.system(size: 64, weight: .bold))
+                        Text("and enter").foregroundStyle(.secondary)
+                        Text(pin.code).font(.system(size: 110, weight: .heavy, design: .monospaced)).kerning(20)
+                    }
+                }
                 ProgressView()
             } else if let error {
                 ErrorView(message: error) { Task { await start() } }
@@ -87,11 +102,14 @@ struct SignInView: View {
         error = nil
         do {
             let p = try await plex.createPin()
+            let q = try? await plex.createPin(strong: true)
             pin = p
-            // The code is valid for 15 minutes; poll every 2 s.
+            qrPin = q
+            // The codes are valid for 15 minutes; poll both every 2 s.
             for _ in 0..<450 {
                 try await Task.sleep(nanoseconds: 2_000_000_000)
                 if try await plex.checkPin(p) { return }
+                if let q, (try? await plex.checkPin(q)) == true { return }
             }
             pin = nil
             error = "The code expired."
@@ -149,5 +167,17 @@ struct ServerPickerView: View {
         connecting = s["clientIdentifier"] as? String
         defer { connecting = nil }
         do { try await plex.connect(s) } catch { self.error = error.localizedDescription }
+    }
+}
+
+
+enum QRCode {
+    static func image(for url: URL) -> UIImage? {
+        let f = CIFilter.qrCodeGenerator()
+        f.message = Data(url.absoluteString.utf8)
+        f.correctionLevel = "M"
+        guard let out = f.outputImage?.transformed(by: CGAffineTransform(scaleX: 12, y: 12)),
+              let cg = CIContext().createCGImage(out, from: out.extent) else { return nil }
+        return UIImage(cgImage: cg)
     }
 }

@@ -41,7 +41,7 @@ struct SettingsView: View {
                     ForEach(languages.indices, id: \.self) { i in Text(languages[i].1).tag(languages[i].0) }
                 }
                 Toggle("Apple decoder for Dolby Atmos (MP4)", isOn: $settings.appleDecoderForAtmos)
-                Toggle("Dolby Atmos from MKV via server remux (experimental)", isOn: $settings.remuxForAtmos)
+                Toggle("Dolby Atmos from MKV (server repackages, no re-encode)", isOn: $settings.remuxForAtmos)
                 LabeledContent("Current output", value: AudioSetup.routeDescription)
             } header: { Text("Audio") } footer: {
                 Text("Every track is decoded on the Apple TV and sent as multichannel PCM (up to 7.1). On AirPods and Beats, tvOS plays 5.1/7.1 as Spatial Audio with head tracking. Dolby Atmos height objects are only kept with Apple's decoder, which needs a DD+ Atmos track in an MP4, or the experimental remux for MKV. For Spatial Audio, turn it on in Control Center on the Apple TV while the AirPods are connected.")

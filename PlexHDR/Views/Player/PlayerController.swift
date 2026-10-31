@@ -66,6 +66,7 @@ final class PlayerController: ObservableObject {
     private var nextLoaded = false
     private var transcodeSession: String?
     private var appliedSubtitle = false
+    private var openRetries = 0
     private var show: PlexItem?
     private var cancellables: Set<AnyCancellable> = []
     var onClose: (() -> Void)?
@@ -107,6 +108,7 @@ final class PlayerController: ObservableObject {
         if plan.engine == .appleRemux {
             let session = UUID().uuidString
             transcodeSession = session
+            remuxOffset = start
             // The server starts the stream at the offset, so the player starts at 0.
             return (pc.remuxURL(item, mediaIndex: plan.mediaIndex, offset: start, session: session), 0)
         }
@@ -144,6 +146,7 @@ final class PlayerController: ObservableObject {
     private func stateChanged(_ s: KSPlayerState) {
         state = s
         if s == .readyToPlay {
+            openRetries = 0
             duration = layer?.player.duration ?? duration
             layer?.player.contentMode = fit.mode
             applyTracksAfterOpen()
@@ -163,8 +166,20 @@ final class PlayerController: ObservableObject {
 
     private func finished(_ err: Error?) {
         if let err {
-            // If Apple's player can't open it, fall back to the app's own player once.
+            // A first open can fail while the server is still starting the stream (or waking a disk): try the same
+            // way once more before changing anything.
+            if openRetries < 1 {
+                openRetries += 1
+                let at = time
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    self?.open(at: at)
+                }
+                return
+            }
+            // If Apple's player still can't open it, fall back to the app's own player.
             if plan.engine != .ffmpeg {
+                openRetries = 0
                 plan.engine = .ffmpeg
                 plan.note = "Apple's player couldn't open this file; playing it with the app's player."
                 open(at: time)

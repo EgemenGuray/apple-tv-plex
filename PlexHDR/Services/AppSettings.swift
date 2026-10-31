@@ -34,7 +34,7 @@ final class AppSettings: ObservableObject {
     @Published var audioLanguage: String { didSet { d.set(audioLanguage, forKey: "audioLanguage") } }
     @Published var audioPreference: AudioPreference { didSet { d.set(audioPreference.rawValue, forKey: "audioPreference") } }
     @Published var appleDecoderForAtmos: Bool { didSet { d.set(appleDecoderForAtmos, forKey: "appleDecoderForAtmos") } }
-    @Published var remuxForAtmos: Bool { didSet { d.set(remuxForAtmos, forKey: "remuxForAtmos") } }
+    @Published var remuxForAtmos: Bool { didSet { d.set(remuxForAtmos, forKey: "remuxForAtmos2") } }
     @Published var subtitleMode: SubtitleMode { didSet { d.set(subtitleMode.rawValue, forKey: "subtitleMode") } }
     @Published var subtitleLanguage: String { didSet { d.set(subtitleLanguage, forKey: "subtitleLanguage") } }
     @Published var subtitlesInAudioLanguage: Bool { didSet { d.set(subtitlesInAudioLanguage, forKey: "subtitlesInAudioLanguage") } }
@@ -67,7 +67,9 @@ final class AppSettings: ObservableObject {
         audioLanguage = s("audioLanguage", "")
         audioPreference = AudioPreference(rawValue: s("audioPreference", "")) ?? .best
         appleDecoderForAtmos = b("appleDecoderForAtmos", true)
-        remuxForAtmos = b("remuxForAtmos", false)
+        // On by default: without it DD+ Atmos in MKV arrives as multichannel PCM. Stored under a new key so the
+        // earlier default (off) doesn't stick.
+        remuxForAtmos = b("remuxForAtmos2", true)
         subtitleMode = SubtitleMode(rawValue: s("subtitleMode", "")) ?? .forced
         subtitleLanguage = s("subtitleLanguage", "")
         subtitlesInAudioLanguage = b("subtitlesInAudioLanguage", false)
