@@ -7,8 +7,22 @@ on:
 
 jobs:
   build:
+    name: build (${{ matrix.name }})
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Apple TV
+            scheme: PlexHDR
+            destination: generic/platform=tvOS
+          - name: iPhone and iPad
+            scheme: PlexHDR-iOS
+            destination: generic/platform=iOS
+          - name: Mac
+            scheme: PlexHDR-macOS
+            destination: generic/platform=macOS
     steps:
       - uses: actions/checkout@v4
       - name: Select the newest Xcode
@@ -19,10 +33,10 @@ jobs:
         run: |
           brew install xcodegen
           xcodegen generate
-      - name: Build for Apple TV (unsigned)
+      - name: Build ${{ matrix.name }} (unsigned)
         run: |
           set -o pipefail
-          xcodebuild -project PlexHDR.xcodeproj -scheme PlexHDR \
-            -destination 'generic/platform=tvOS' \
+          xcodebuild -project PlexHDR.xcodeproj -scheme "${{ matrix.scheme }}" \
+            -destination '${{ matrix.destination }}' \
             -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error:|warning: .*(PlexHDR/)|BUILD (SUCCEEDED|FAILED)|\*\*" | head -300

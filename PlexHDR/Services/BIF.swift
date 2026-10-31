@@ -1,4 +1,7 @@
+import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
 
 /// Plex trick-play thumbnails: a BIF file is a header, a table of (timestamp, offset) pairs and the JPEGs back to back.
 final class BIF {

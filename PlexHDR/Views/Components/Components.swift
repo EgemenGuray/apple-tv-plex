@@ -61,25 +61,25 @@ struct RemoteImage: View {
 
 struct PosterCard: View {
     let item: PlexItem
-    var width: CGFloat = 260
+    var width: CGFloat = 260.s
     @State private var tmdbPoster: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 10.s) {
             ZStack(alignment: .topTrailing) {
                 RemoteImage(url: PlexClient.shared.imageURL(item.posterPath ?? tmdbPoster, width: Int(width * 1.5), height: Int(width * 2.25)))
                     .frame(width: width, height: width * 1.5)
                     .clipped()
                 if !item.isWatched, item.type == "show", let leaves = item.leafCount, let seen = item.viewedLeafCount, leaves - seen > 0 {
                     Text("\(leaves - seen)")
-                        .font(.caption2.bold()).padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(.ultraThinMaterial, in: Capsule()).padding(10)
+                        .font(.caption2.bold()).padding(.horizontal, 10.s).padding(.vertical, 4.s)
+                        .background(.ultraThinMaterial, in: Capsule()).padding(10.s)
                 } else if item.isWatched {
-                    Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(.white, .black.opacity(0.4)).padding(10)
+                    Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(.white, .black.opacity(0.4)).padding(10.s)
                 }
             }
             .overlay(alignment: .bottom) { ProgressLine(progress: item.progress) }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12.s, style: .continuous))
         }
         .frame(width: width)
         .task(id: item.id) {
@@ -90,16 +90,16 @@ struct PosterCard: View {
 
 struct WideCard: View {
     let item: PlexItem
-    var width: CGFloat = 480
+    var width: CGFloat = 480.s
     var showTitle = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 8.s) {
             RemoteImage(url: PlexClient.shared.imageURL(item.type == "episode" ? (item.thumb ?? item.backdropPath) : item.backdropPath,
                                                         width: Int(width * 1.5), height: Int(width * 1.5 * 9 / 16)))
                 .frame(width: width, height: width * 9 / 16)
                 .overlay(alignment: .bottom) { ProgressLine(progress: item.progress) }
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12.s, style: .continuous))
             if showTitle {
                 Text(item.displayTitle).font(.callout).lineLimit(1)
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -125,7 +125,7 @@ struct ProgressLine: View {
                     Capsule().fill(.white).frame(width: g.size.width * p)
                 }
             }
-            .frame(height: 6).padding(.horizontal, 12).padding(.bottom, 10)
+            .frame(height: 6.s).padding(.horizontal, 12.s).padding(.bottom, 10.s)
         }
     }
 }
@@ -139,21 +139,21 @@ struct ItemRow: View {
     var onFocus: ((PlexItem) -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title).font(.title3.bold()).padding(.leading, 80)
+        VStack(alignment: .leading, spacing: 16.s) {
+            Text(title).font(.title3.bold()).padding(.leading, 80.s)
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 40) {
+                LazyHStack(alignment: .top, spacing: 40.s) {
                     ForEach(items) { item in
                         ItemLink(item: item, onFocus: onFocus) {
                             if wide { WideCard(item: item) } else { PosterCard(item: item) }
                         }
                     }
                 }
-                .padding(.horizontal, 80).padding(.vertical, 30)
+                .padding(.horizontal, 80.s).padding(.vertical, 30.s)
             }
             .scrollClipDisabled()
         }
-        .focusSection()
+        .tvFocusSection()
     }
 }
 
@@ -194,8 +194,8 @@ struct Badge: View {
     let text: String
     var body: some View {
         Text(text).font(.caption2.weight(.semibold))
-            .padding(.horizontal, 10).padding(.vertical, 3)
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(0.7), lineWidth: 1.5))
+            .padding(.horizontal, 10.s).padding(.vertical, 3.s)
+            .overlay(RoundedRectangle(cornerRadius: 5.s).stroke(.white.opacity(0.7), lineWidth: 1.5.s))
             .foregroundStyle(.white.opacity(0.9))
     }
 }
@@ -205,7 +205,7 @@ struct Badge: View {
 struct RatingsRow: View {
     let ratings: Online.Ratings
     var body: some View {
-        HStack(spacing: 34) {
+        HStack(spacing: 34.s) {
             if let v = ratings.imdb { item(IMDbLogo(), v) }
             if let v = ratings.letterboxd { item(LetterboxdLogo(), v) }
             if let v = ratings.rtCritic { item(TomatometerLogo(score: percent(v)), v) }
@@ -216,7 +216,7 @@ struct RatingsRow: View {
     }
     private func percent(_ v: String) -> Int { Int(v.filter(\.isNumber)) ?? 0 }
     private func item<L: View>(_ logo: L, _ value: String?) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 10.s) {
             logo
             if let value { Text(value).font(.callout.weight(.semibold)).monospacedDigit() }
         }
@@ -225,20 +225,20 @@ struct RatingsRow: View {
 
 struct IMDbLogo: View {
     var body: some View {
-        Text("IMDb").font(.system(size: 22, weight: .black)).foregroundStyle(.black)
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(Color(red: 0.96, green: 0.77, blue: 0.09), in: RoundedRectangle(cornerRadius: 5))
+        Text("IMDb").font(.system(size: 22.s, weight: .black)).foregroundStyle(.black)
+            .padding(.horizontal, 8.s).padding(.vertical, 3.s)
+            .background(Color(red: 0.96, green: 0.77, blue: 0.09), in: RoundedRectangle(cornerRadius: 5.s))
     }
 }
 
 struct LetterboxdLogo: View {
     var body: some View {
-        HStack(spacing: -7) {
+        HStack(spacing: -7.s) {
             Circle().fill(Color(red: 1, green: 0.5, blue: 0))
             Circle().fill(Color(red: 0, green: 0.88, blue: 0.33)).blendMode(.screen)
             Circle().fill(Color(red: 0.25, green: 0.74, blue: 0.96)).blendMode(.screen)
         }
-        .frame(width: 54, height: 22)
+        .frame(width: 54.s, height: 22.s)
     }
 }
 
@@ -250,15 +250,15 @@ struct TomatometerLogo: View {
             if score >= 60 {
                 Circle().fill(Color(red: 0.98, green: 0.2, blue: 0.08))
                     .overlay(alignment: .top) {
-                        Star(points: 5, inner: 0.4).fill(Color(red: 0, green: 0.6, blue: 0.2)).frame(width: 14, height: 9).offset(y: -2)
+                        Star(points: 5, inner: 0.4).fill(Color(red: 0, green: 0.6, blue: 0.2)).frame(width: 14.s, height: 9.s).offset(y: -2.s)
                     }
-                    .padding(score >= 75 ? 4 : 0)
-                if score >= 75 { Circle().stroke(Color(red: 1, green: 0.8, blue: 0.1), lineWidth: 3) }
+                    .padding(score >= 75 ? 4.s : 0)
+                if score >= 75 { Circle().stroke(Color(red: 1, green: 0.8, blue: 0.1), lineWidth: 3.s) }
             } else {
                 Star(points: 9, inner: 0.62).fill(Color(red: 0.04, green: 0.75, blue: 0.29)).rotationEffect(.degrees(12))
             }
         }
-        .frame(width: 30, height: 30)
+        .frame(width: 30.s, height: 30.s)
     }
 }
 
@@ -268,15 +268,15 @@ struct PopcornLogo: View {
     var body: some View {
         let fresh = score >= 60
         ZStack(alignment: .top) {
-            HStack(spacing: -4) {
-                ForEach(0..<3, id: \.self) { _ in Circle().fill(Color(red: 1, green: 0.93, blue: 0.7)).frame(width: 12, height: 12) }
+            HStack(spacing: -4.s) {
+                ForEach(0..<3, id: \.self) { _ in Circle().fill(Color(red: 1, green: 0.93, blue: 0.7)).frame(width: 12.s, height: 12.s) }
             }
-            .offset(y: -3)
+            .offset(y: -3.s)
             Bucket().fill(fresh ? Color(red: 0.98, green: 0.2, blue: 0.08) : Color(red: 0.04, green: 0.75, blue: 0.29))
-                .overlay(Bucket().stroke(.white.opacity(0.7), style: StrokeStyle(lineWidth: 2, dash: [3, 4])))
-                .frame(width: 24, height: 22).offset(y: 6)
+                .overlay(Bucket().stroke(.white.opacity(0.7), style: StrokeStyle(lineWidth: 2.s, dash: [3, 4])))
+                .frame(width: 24.s, height: 22.s).offset(y: 6.s)
         }
-        .frame(width: 30, height: 30)
+        .frame(width: 30.s, height: 30.s)
         .rotationEffect(.degrees(fresh ? 0 : -100))
     }
     private struct Bucket: Shape {
@@ -298,10 +298,10 @@ struct ScoreBadge: View {
     let caption: String
     var body: some View {
         let color = score >= 61 ? Color(red: 0.4, green: 0.8, blue: 0.2) : score >= 40 ? Color(red: 1, green: 0.8, blue: 0.2) : Color(red: 0.94, green: 0.15, blue: 0.15)
-        HStack(spacing: 8) {
-            Text(text).font(.system(size: 20, weight: .heavy)).foregroundStyle(score >= 40 && score < 61 ? .black : .white)
-                .frame(width: 44, height: 36)
-                .background(color, in: circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 6)))
+        HStack(spacing: 8.s) {
+            Text(text).font(.system(size: 20.s, weight: .heavy)).foregroundStyle(score >= 40 && score < 61 ? .black : .white)
+                .frame(width: 44.s, height: 36.s)
+                .background(color, in: circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 6.s)))
             Text(caption).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
         }
     }
@@ -327,8 +327,8 @@ struct Star: Shape {
 /// Title logo when Plex (or TMDB) has one, otherwise the title in large type.
 struct TitleLogo: View {
     let item: PlexItem
-    var maxWidth: CGFloat = 700
-    var maxHeight: CGFloat = 220
+    var maxWidth: CGFloat = 700.s
+    var maxHeight: CGFloat = 220.s
     @State private var tmdbLogo: String?
 
     var body: some View {
@@ -337,7 +337,7 @@ struct TitleLogo: View {
                 RemoteImage(url: url, contentMode: .fit, placeholder: .clear)
                     .frame(maxWidth: maxWidth, maxHeight: maxHeight, alignment: .bottomLeading)
             } else {
-                Text(item.displayTitle).font(.system(size: 76, weight: .heavy)).lineLimit(2).minimumScaleFactor(0.5)
+                Text(item.displayTitle).font(.system(size: 76.s, weight: .heavy)).lineLimit(2).minimumScaleFactor(0.5)
                     .frame(maxWidth: maxWidth * 1.4, alignment: .leading)
             }
         }
@@ -391,9 +391,9 @@ struct ErrorView: View {
     let message: String
     var retry: (() -> Void)?
     var body: some View {
-        VStack(spacing: 30) {
-            Image(systemName: "exclamationmark.triangle").font(.system(size: 60))
-            Text(message).multilineTextAlignment(.center).frame(maxWidth: 1000)
+        VStack(spacing: 30.s) {
+            Image(systemName: "exclamationmark.triangle").font(.system(size: 60.s))
+            Text(message).multilineTextAlignment(.center).frame(maxWidth: 1000.s)
             if let retry { Button("Try Again", action: retry) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

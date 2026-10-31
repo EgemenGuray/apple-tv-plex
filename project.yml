@@ -3,6 +3,8 @@ options:
   bundleIdPrefix: com.egemenguray
   deploymentTarget:
     tvOS: "17.0"
+    iOS: "17.0"
+    macOS: "14.0"
   createIntermediateGroups: true
 settings:
   base:
@@ -12,8 +14,11 @@ packages:
   KSPlayer:
     url: https://github.com/kingslay/KSPlayer.git
     # Pinned: KSPlayer ships its core as a binary framework whose API changes between commits.
+    # Its free (GPL) binary has Apple TV and Mac slices only, so the iPhone/iPad app plays through AVPlayer.
     revision: 7d6b4ced6f6b0d3b54cde84c77314a3fa6d927b0
+
 targets:
+  # Apple TV: KSPlayer (FFmpeg) plays everything; AVPlayer for Dolby Atmos.
   PlexHDR:
     type: application
     platform: tvOS
@@ -29,19 +34,90 @@ targets:
       path: PlexHDR/Info.plist
       properties:
         CFBundleDisplayName: Plex HDR
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
-        UILaunchScreen: {}
-        UIRequiredDeviceCapabilities: [arm64]
-        UIUserInterfaceStyle: Dark
-        UIBackgroundModes: [audio]
+        CFBundleShortVersionString: "0.2.0"
+        CFBundleVersion: "2"
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSLocalNetworkUsageDescription: Plex HDR connects to your Plex Media Server on the local network.
         NSBonjourServices: [_plexmediasvr._tcp]
+        UILaunchScreen: {}
+        UIRequiredDeviceCapabilities: [arm64]
+        UIUserInterfaceStyle: Dark
+        UIBackgroundModes: [audio]
     settings:
       base:
+        PRODUCT_NAME: PlexHDR
         PRODUCT_BUNDLE_IDENTIFIER: com.egemenguray.plexhdr
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         TARGETED_DEVICE_FAMILY: "3"
         ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) KSPLAYER
+
+  # iPhone and iPad: AVPlayer, with the Plex server repackaging MKV as HLS.
+  PlexHDR-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: PlexHDR
+        excludes: [Info.plist, Assets.xcassets]
+      - path: Shared/AppIcon.xcassets
+    scheme: {}
+    info:
+      path: Support/iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Plex HDR
+        CFBundleShortVersionString: "0.2.0"
+        CFBundleVersion: "2"
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Plex HDR connects to your Plex Media Server on the local network.
+        NSBonjourServices: [_plexmediasvr._tcp]
+        UILaunchScreen: {}
+        UIUserInterfaceStyle: Dark
+        UIBackgroundModes: [audio]
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+    settings:
+      base:
+        PRODUCT_NAME: PlexHDR
+        PRODUCT_BUNDLE_IDENTIFIER: com.egemenguray.plexhdr
         ENABLE_USER_SCRIPT_SANDBOXING: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  # Mac: KSPlayer (FFmpeg) as on Apple TV.
+  PlexHDR-macOS:
+    type: application
+    platform: macOS
+    sources:
+      - path: PlexHDR
+        excludes: [Info.plist, Assets.xcassets]
+      - path: Shared/AppIcon.xcassets
+    scheme: {}
+    dependencies:
+      - package: KSPlayer
+        product: KSPlayer
+      - package: KSPlayer
+        product: KSPlayerUI
+    info:
+      path: Support/macOS/Info.plist
+      properties:
+        CFBundleDisplayName: Plex HDR
+        CFBundleShortVersionString: "0.2.0"
+        CFBundleVersion: "2"
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Plex HDR connects to your Plex Media Server on the local network.
+        NSBonjourServices: [_plexmediasvr._tcp]
+        LSApplicationCategoryType: public.app-category.entertainment
+        NSHumanReadableCopyright: ""
+    settings:
+      base:
+        PRODUCT_NAME: PlexHDR
+        PRODUCT_BUNDLE_IDENTIFIER: com.egemenguray.plexhdr
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) KSPLAYER
+        ENABLE_HARDENED_RUNTIME: NO
+        CODE_SIGN_IDENTITY: "-"

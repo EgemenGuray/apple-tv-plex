@@ -15,9 +15,28 @@ struct RootView: View {
                 MainTabs()
             }
         }
-        .fullScreenCover(item: $presenter.request, onDismiss: { presenter.playbackEnded += 1 }) { req in
+        .playerPresentation(presenter)
+    }
+}
+
+extension View {
+    /// The player covers the whole screen: a full-screen cover on Apple TV, iPhone and iPad, an overlay in the Mac
+    /// window (macOS has no full-screen cover).
+    @ViewBuilder func playerPresentation(_ presenter: PlayerPresenter) -> some View {
+        #if os(macOS)
+        ZStack {
+            self
+            if let req = presenter.request {
+                PlayerScreen(request: req).id(req.id).transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: presenter.request?.id)
+        #else
+        fullScreenCover(item: Binding(get: { presenter.request }, set: { presenter.request = $0 }),
+                        onDismiss: { presenter.playbackEnded += 1 }) { req in
             PlayerScreen(request: req)
         }
+        #endif
     }
 }
 
@@ -67,26 +86,22 @@ struct SignInView: View {
     @State private var pin: PlexClient.Pin?
     @State private var qrPin: PlexClient.Pin?
     @State private var error: String?
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
-        VStack(spacing: 50) {
+        VStack(spacing: 50.s) {
             Text("Sign in to Plex").font(.largeTitle.bold())
             if let pin {
-                HStack(alignment: .center, spacing: 120) {
-                    VStack(spacing: 24) {
-                        if let qrPin, let qr = QRCode.image(for: plex.authURL(code: qrPin.code)) {
-                            Image(uiImage: qr).interpolation(.none).resizable()
-                                .frame(width: 420, height: 420)
-                                .padding(24).background(.white, in: RoundedRectangle(cornerRadius: 24))
-                        }
-                        Text("Scan with your phone").foregroundStyle(.secondary)
+                if !Platform.isTV, let qrPin {
+                    // On a phone, tablet or Mac the browser is right here.
+                    Button { openURL(plex.authURL(code: qrPin.code)) } label: {
+                        Label("Sign in with Plex in the browser", systemImage: "safari").padding(.horizontal, 20.s).padding(.vertical, 8.s)
                     }
-                    VStack(spacing: 30) {
-                        Text("Or go to").foregroundStyle(.secondary)
-                        Text("plex.tv/link").font(.system(size: 64, weight: .bold))
-                        Text("and enter").foregroundStyle(.secondary)
-                        Text(pin.code).font(.system(size: 110, weight: .heavy, design: .monospaced)).kerning(20)
-                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                ViewThatFits {
+                    HStack(alignment: .center, spacing: 120.s) { signInMethods(pin) }
+                    VStack(spacing: 50.s) { signInMethods(pin) }
                 }
                 ProgressView()
             } else if let error {
@@ -95,7 +110,27 @@ struct SignInView: View {
                 ProgressView()
             }
         }
+        .padding()
         .task { await start() }
+    }
+
+    @ViewBuilder private func signInMethods(_ pin: PlexClient.Pin) -> some View {
+        if !Platform.isPhone {
+            VStack(spacing: 24.s) {
+                if let qrPin, let qr = QRCode.image(for: plex.authURL(code: qrPin.code)) {
+                    Image(uiImage: qr).interpolation(.none).resizable()
+                        .frame(width: 420.s, height: 420.s)
+                        .padding(24.s).background(.white, in: RoundedRectangle(cornerRadius: 24.s))
+                }
+                Text("Scan with your phone").foregroundStyle(.secondary)
+            }
+        }
+        VStack(spacing: 30.s) {
+            Text(Platform.isTV ? "Or go to" : "Or on any device go to").foregroundStyle(.secondary)
+            Text("plex.tv/link").font(.system(size: 64.s, weight: .bold))
+            Text("and enter").foregroundStyle(.secondary)
+            Text(pin.code).font(.system(size: 110.s, weight: .heavy, design: .monospaced)).kerning(20.s)
+        }
     }
 
     private func start() async {
@@ -128,7 +163,7 @@ struct ServerPickerView: View {
     @State private var connecting: String?
 
     var body: some View {
-        VStack(spacing: 40) {
+        VStack(spacing: 40.s) {
             Text("Choose a server").font(.largeTitle.bold())
             if loading { ProgressView() }
             if let error { Text(error).foregroundStyle(.red) }
@@ -146,7 +181,7 @@ struct ServerPickerView: View {
                         Spacer()
                         if connecting == s["clientIdentifier"] as? String { ProgressView() }
                     }
-                    .frame(width: 900)
+                    .frame(maxWidth: 900.s)
                 }
             }
             Button("Sign Out", role: .destructive) { plex.signOut() }
@@ -178,6 +213,10 @@ enum QRCode {
         f.correctionLevel = "M"
         guard let out = f.outputImage?.transformed(by: CGAffineTransform(scaleX: 12, y: 12)),
               let cg = CIContext().createCGImage(out, from: out.extent) else { return nil }
+        #if os(macOS)
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        #else
         return UIImage(cgImage: cg)
+        #endif
     }
 }

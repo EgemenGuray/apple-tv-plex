@@ -19,7 +19,7 @@ struct LibraryView: View {
         ("titleSort", "Title"), ("addedAt:desc", "Date Added"), ("originallyAvailableAt:desc", "Release Date"),
         ("rating:desc", "Rating"), ("lastViewedAt:desc", "Recently Watched"),
     ]
-    private let columns = Array(repeating: GridItem(.fixed(260), spacing: 50), count: 6)
+    private let columns = posterColumns()
 
     init(section: PlexSection) {
         self.section = section
@@ -29,15 +29,15 @@ struct LibraryView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
-                filterBar.focusSection()
+            VStack(alignment: .leading, spacing: 30.s) {
+                filterBar.scrollsHorizontallyOnSmallScreens().tvFocusSection()
                 if let error { Text(error).foregroundStyle(.red) }
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 60) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 60.s) {
                     ForEach(showCollections ? collections : items) { item in
                         ItemLink(item: item) {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 8.s) {
                                 PosterCard(item: item)
-                                Text(item.title).font(.caption).lineLimit(1).frame(width: 260, alignment: .leading)
+                                Text(item.title).font(.caption).lineLimit(1).frame(width: 260.s, alignment: .leading)
                             }
                         }
                         .onAppear { if !showCollections, item.id == items.last?.id { Task { await loadMore() } } }
@@ -45,7 +45,7 @@ struct LibraryView: View {
                 }
                 if loading { ProgressView().frame(maxWidth: .infinity) }
             }
-            .padding(.horizontal, 80).padding(.vertical, 40)
+            .padding(.horizontal, 80.s).padding(.vertical, 40.s)
         }
         .task(id: "\(sort)|\(unwatched)|\(genre?.key ?? "")") { await reload() }
         .task { genres = (try? await PlexClient.shared.genres(section.id)) ?? [] }
@@ -53,7 +53,7 @@ struct LibraryView: View {
     }
 
     private var filterBar: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 24.s) {
             Menu {
                 ForEach(Self.sorts.indices, id: \.self) { i in
                     let s = Self.sorts[i]
@@ -102,20 +102,20 @@ struct LibraryView: View {
 struct CollectionView: View {
     let collection: PlexItem
     @State private var items: [PlexItem] = []
-    private let columns = Array(repeating: GridItem(.fixed(260), spacing: 50), count: 6)
+    private let columns = posterColumns()
 
     var body: some View {
         ZStack {
             Backdrop(item: collection)
             ScrollView {
-                VStack(alignment: .leading, spacing: 30) {
+                VStack(alignment: .leading, spacing: 30.s) {
                     Text(collection.title).font(.largeTitle.bold())
-                    if let s = collection.summary { Text(s).font(.callout).lineLimit(3).frame(maxWidth: 1200, alignment: .leading) }
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 60) {
+                    if let s = collection.summary { Text(s).font(.callout).lineLimit(3).frame(maxWidth: 1200.s, alignment: .leading) }
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 60.s) {
                         ForEach(items) { item in ItemLink(item: item) { PosterCard(item: item) } }
                     }
                 }
-                .padding(80)
+                .padding(80.s)
             }
         }
         .task { if let rk = collection.ratingKey { items = (try? await PlexClient.shared.collectionItems(rk)) ?? [] } }
@@ -125,36 +125,36 @@ struct CollectionView: View {
 struct PersonView: View {
     let person: PlexPerson
     @State private var items: [PlexItem]?
-    private let columns = Array(repeating: GridItem(.fixed(260), spacing: 50), count: 6)
+    private let columns = posterColumns()
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 40) {
-                HStack(spacing: 40) {
+            VStack(alignment: .leading, spacing: 40.s) {
+                HStack(spacing: 40.s) {
                     RemoteImage(url: PlexClient.shared.imageURL(person.thumb, width: 300, height: 300))
-                        .frame(width: 200, height: 200).clipShape(Circle())
-                    VStack(alignment: .leading, spacing: 10) {
+                        .frame(width: 200.s, height: 200.s).clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 10.s) {
                         Text(person.name).font(.largeTitle.bold())
                         Text("In your libraries").foregroundStyle(.secondary)
                     }
                 }
                 if let items {
                     if items.isEmpty { Text("Nothing else in your libraries.").foregroundStyle(.secondary) }
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 60) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 60.s) {
                         ForEach(items) { item in
                             ItemLink(item: item) {
-                                VStack(alignment: .leading, spacing: 6) {
+                                VStack(alignment: .leading, spacing: 6.s) {
                                     PosterCard(item: item)
                                     Text(item.title).font(.caption).lineLimit(1)
                                     Text(item.year.map(String.init) ?? "").font(.caption2).foregroundStyle(.secondary)
                                 }
-                                .frame(width: 260, alignment: .leading)
+                                .frame(width: 260.s, alignment: .leading)
                             }
                         }
                     }
                 } else { ProgressView() }
             }
-            .padding(80)
+            .padding(80.s)
         }
         .task { await load() }
     }
@@ -174,22 +174,22 @@ struct PersonView: View {
 struct SearchView: View {
     @State private var query = ""
     @State private var results: [PlexItem] = []
-    private let columns = Array(repeating: GridItem(.fixed(260), spacing: 50), count: 6)
+    private let columns = posterColumns()
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 60) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 60.s) {
                 ForEach(results) { item in
                     ItemLink(item: item) {
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 6.s) {
                             PosterCard(item: item)
                             Text(item.type == "episode" ? "\(item.grandparentTitle ?? "") · \(item.title)" : item.title).font(.caption).lineLimit(1)
                         }
-                        .frame(width: 260, alignment: .leading)
+                        .frame(width: 260.s, alignment: .leading)
                     }
                 }
             }
-            .padding(80)
+            .padding(80.s)
         }
         .searchable(text: $query, prompt: "Movies, shows, episodes")
         .task(id: query) {
