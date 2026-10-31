@@ -105,10 +105,25 @@ final class PlexClient: ObservableObject {
 
     struct Pin { let id: Int; let code: String }
 
-    func createPin() async throws -> Pin {
-        let r = try await json("POST", Self.url("https://plex.tv", "/api/v2/pins", ["strong": "false"])) as? JSON ?? [:]
+    /// strong = false gives the 4-character code for plex.tv/link; strong = true gives the long code the QR sign-in page uses.
+    func createPin(strong: Bool = false) async throws -> Pin {
+        let r = try await json("POST", Self.url("https://plex.tv", "/api/v2/pins", ["strong": strong ? "true" : "false"])) as? JSON ?? [:]
         guard let id = (r["id"] as? NSNumber)?.intValue, let code = r["code"] as? String else { throw PlexError.message("plex.tv did not return a code") }
         return Pin(id: id, code: code)
+    }
+
+    /// Plex's sign-in page for this PIN, for the QR code: opening it on a phone where you're signed in to Plex
+    /// approves the Apple TV without typing the code.
+    func authURL(code: String) -> URL {
+        var c = URLComponents(string: "https://app.plex.tv/auth")!
+        var q = URLComponents()
+        q.queryItems = [
+            URLQueryItem(name: "clientID", value: clientId),
+            URLQueryItem(name: "code", value: code),
+            URLQueryItem(name: "context[device][product]", value: Self.product),
+        ]
+        c.fragment = "?" + (q.percentEncodedQuery ?? "")
+        return c.url!
     }
 
     /// Returns true once the code has been entered at plex.tv/link.

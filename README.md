@@ -18,9 +18,10 @@ commit in `project.yml` because its core ships as a binary framework.
 | **MKV direct play** | **Yes** | The app demuxes MKV itself (FFmpeg). The server is never asked to convert anything. |
 | **HDR10 / HLG** | **Yes** | Sent to the TV as they are, with "Match Dynamic Range" on. |
 | **HDR10+** | **Yes** (Apple TV 4K 2022, tvOS 16+) | KSPlayer passes HDR10+ dynamic metadata; the TV must support HDR10+ (the QN900B does). |
-| **Dolby Vision** | **Partly** | Profile 8 plays its HDR10 base layer. Profile 5 is converted to HDR10 by the player. Real Dolby Vision output (RPU to the TV) is only in KSPlayer's paid build, and Samsung TVs can't show Dolby Vision anyway. |
+| **Dolby Vision** | **Partly** | Profile 8 files that also carry HDR10+ (common in recent releases) play as HDR10+, and the app labels them that way. Profile 8 without HDR10+ plays its HDR10 base layer; profile 5 is converted to HDR10 by the player. Real Dolby Vision output is only in KSPlayer's paid build, and Samsung TVs can't show Dolby Vision anyway. |
+| **8K** | **No (4K output)** | Apple TV 4K outputs at most 4K, so 8K files are scaled down. The app shows an 8K badge and says so; play 8K with the TV's own app. |
 | **Spatial Audio on AirPods** | **Yes, for every surround track** | Every track is decoded to 5.1/7.1 PCM and the audio session runs in movie mode with multichannel content allowed, so tvOS spatializes it with head tracking. This includes TrueHD, DTS, DTS-HD MA, DD+ and AC3, exactly as Infuse does. |
-| **Dolby Atmos with height** | **DD+ Atmos only, through Apple's decoder** | Apple's own decoder keeps Atmos objects for Dolby Digital Plus (E-AC3 JOC): to a soundbar as Dolby Atmos, and on AirPods as Spatial Audio with height. The app uses it automatically for MP4/MOV files with a DD+ Atmos track. For MKV there is an experimental option that has the server repackage the file (video and audio copied, nothing re-encoded). TrueHD Atmos is decoded to 7.1 PCM: the height objects are folded into the 7.1 mix. That's the Apple TV's limit, and Infuse has the same one. |
+| **Dolby Atmos with height** | **DD+ Atmos only, through Apple's decoder** | Apple's own decoder keeps Atmos objects for Dolby Digital Plus (E-AC3 JOC): to a soundbar as Dolby Atmos, and on AirPods as Spatial Audio with height. The app uses it automatically for DD+ Atmos tracks: MP4/MOV files play directly, and MKV files are repackaged by the server as HLS (video and audio copied, nothing re-encoded) because Apple's player can't open MKV. Without this, DD+ Atmos arrives at the soundbar as multichannel PCM. Set the Apple TV's **Settings → Video and Audio → Audio Format** to Dolby Atmos. If Apple's player can't open the stream, the app retries once and then falls back to its own player (multichannel PCM). TrueHD Atmos is decoded to 7.1 PCM: the height objects are folded into the 7.1 mix. That's the Apple TV's limit, and Infuse has the same one. |
 | **Lossless audio to a receiver** | **Yes, as multichannel PCM** | Apple TV can't bitstream TrueHD or DTS. It sends decoded 7.1 PCM over HDMI, which is lossless. |
 | DTS / DTS:X | **Yes, decoded** | DTS:X objects are folded into 7.1. |
 | Image subtitles (PGS, VobSub) | **Yes** | Drawn by the player. Samsung's AVPlay couldn't do this. |
@@ -42,7 +43,8 @@ commit in `project.yml` because its core ships as a binary framework.
   summary, with Play/Resume and More Info. It moves to the next title every 9 s while you rest on it; ◀ on Play and ▶
   on More Info flip between titles. Below it: Continue Watching (wide cards with progress) and Recently Added for every
   library. The background cross-fades to whatever card has focus.
-- **Libraries**: poster grid that loads more as you scroll, with Sort (title, date added, release date, rating,
+- **Sign-in**: scan the QR code with a phone that's signed in to Plex, or enter the code at plex.tv/link.
+- **Libraries**: poster grid that loads more as you scroll (films newest release first by default), with Sort (title, date added, release date, rating,
   recently watched), Unwatched only, Genre and Collections.
 - **Show page**: backdrop and logo, Play/Resume the next episode, Mark watched, season pills (moving onto a season
   loads it), episode row with stills, Cast & Crew, More Like This.
@@ -52,7 +54,7 @@ commit in `project.yml` because its core ships as a binary framework.
   Rows: Chapters (press one to start there), the rest of the season, Cast & Crew, Extras, More Like This.
 - **Cast & Crew**: actors with their roles, then directors, writers and producers (one card per person, all their jobs).
   Press a person to see everything they're credited on in your libraries.
-- **Ratings**: IMDb, Rotten Tomatoes (critics and audience), Metascore, Metacritic user score, Letterboxd.
+- **Ratings** with each site's logo, in this order: IMDb, Letterboxd, Tomatometer (fresh, Certified Fresh or rotten logo by score), RT Audience (upright or tipped popcorn), Metacritic user score, Metascore.
 - **Search** with the tvOS keyboard (and dictation / iPhone keyboard).
 - **Settings**: Plex Home user switching (with PIN pad), server, audio track preference and language, Atmos options,
   subtitle mode/language/size/colour/style/position, autoplay next, auto-skip intro/credits, skip intervals, match frame
@@ -100,7 +102,7 @@ sites change their layout.
 |---|---|---|
 | Plays any file (MKV, MP4, TS, AVI…) without server conversion | Yes | FFmpeg player |
 | Spatial Audio for all surround formats | Yes | Multichannel PCM up to 7.1 |
-| Dolby Atmos (DD+) with height | Yes for MP4/MOV; MKV experimental | Apple's decoder |
+| Dolby Atmos (DD+) with height | Yes | Apple's decoder; MKV through a server remux |
 | TrueHD / DTS-HD MA decoding | Yes | Lossless PCM over HDMI |
 | HDR10 / HDR10+ / HLG, match frame rate and range | Yes | Needs "Match Content" on in tvOS settings |
 | Dolby Vision output | No (P8 → HDR10 base, P5 → HDR10) | Paid KSPlayer feature; Samsung TVs can't show DV anyway |

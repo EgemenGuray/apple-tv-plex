@@ -200,24 +200,127 @@ struct Badge: View {
     }
 }
 
+/// Ratings with each site's logo, in this order: IMDb, Letterboxd, Tomatometer, RT Audience, Metacritic (users),
+/// Metascore (critics). The Rotten Tomatoes logos change with the score, as on their site.
 struct RatingsRow: View {
     let ratings: Online.Ratings
     var body: some View {
-        HStack(spacing: 26) {
-            if let v = ratings.imdb { chip("IMDb", v, .yellow) }
-            if let v = ratings.rtCritic { chip("🍅", v, .red) }
-            if let v = ratings.rtAudience { chip("🍿", v, .orange) }
-            if let v = ratings.metaCritic { chip("Metascore", v, .green) }
-            if let v = ratings.metaUser { chip("MC User", v, .mint) }
-            if let v = ratings.letterboxd { chip("Letterboxd", v, .teal) }
+        HStack(spacing: 34) {
+            if let v = ratings.imdb { item(IMDbLogo(), v) }
+            if let v = ratings.letterboxd { item(LetterboxdLogo(), v) }
+            if let v = ratings.rtCritic { item(TomatometerLogo(score: percent(v)), v) }
+            if let v = ratings.rtAudience { item(PopcornLogo(score: percent(v)), v) }
+            if let v = ratings.metaUser { item(ScoreBadge(score: (Double(v) ?? 0) * 10, text: v, circle: true, caption: "User"), nil) }
+            if let v = ratings.metaCritic { item(ScoreBadge(score: Double(v) ?? 0, text: v, circle: false, caption: "Metascore"), nil) }
         }
     }
-    private func chip(_ label: String, _ value: String, _ tint: Color) -> some View {
-        HStack(spacing: 8) {
-            Text(label).font(.caption2.bold()).padding(.horizontal, 8).padding(.vertical, 2)
-                .background(tint.opacity(0.85), in: RoundedRectangle(cornerRadius: 4)).foregroundStyle(.black)
-            Text(value).font(.callout.weight(.semibold))
+    private func percent(_ v: String) -> Int { Int(v.filter(\.isNumber)) ?? 0 }
+    private func item<L: View>(_ logo: L, _ value: String?) -> some View {
+        HStack(spacing: 10) {
+            logo
+            if let value { Text(value).font(.callout.weight(.semibold)).monospacedDigit() }
         }
+    }
+}
+
+struct IMDbLogo: View {
+    var body: some View {
+        Text("IMDb").font(.system(size: 22, weight: .black)).foregroundStyle(.black)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Color(red: 0.96, green: 0.77, blue: 0.09), in: RoundedRectangle(cornerRadius: 5))
+    }
+}
+
+struct LetterboxdLogo: View {
+    var body: some View {
+        HStack(spacing: -7) {
+            Circle().fill(Color(red: 1, green: 0.5, blue: 0))
+            Circle().fill(Color(red: 0, green: 0.88, blue: 0.33)).blendMode(.screen)
+            Circle().fill(Color(red: 0.25, green: 0.74, blue: 0.96)).blendMode(.screen)
+        }
+        .frame(width: 54, height: 22)
+    }
+}
+
+/// Fresh tomato (60%+), Certified Fresh (75%+, gold ring) or a green rotten splat.
+struct TomatometerLogo: View {
+    let score: Int
+    var body: some View {
+        ZStack {
+            if score >= 60 {
+                Circle().fill(Color(red: 0.98, green: 0.2, blue: 0.08))
+                    .overlay(alignment: .top) {
+                        Star(points: 5, inner: 0.4).fill(Color(red: 0, green: 0.6, blue: 0.2)).frame(width: 14, height: 9).offset(y: -2)
+                    }
+                    .padding(score >= 75 ? 4 : 0)
+                if score >= 75 { Circle().stroke(Color(red: 1, green: 0.8, blue: 0.1), lineWidth: 3) }
+            } else {
+                Star(points: 9, inner: 0.62).fill(Color(red: 0.04, green: 0.75, blue: 0.29)).rotationEffect(.degrees(12))
+            }
+        }
+        .frame(width: 30, height: 30)
+    }
+}
+
+/// Upright red popcorn bucket (60%+) or a tipped-over green one.
+struct PopcornLogo: View {
+    let score: Int
+    var body: some View {
+        let fresh = score >= 60
+        ZStack(alignment: .top) {
+            HStack(spacing: -4) {
+                ForEach(0..<3, id: \.self) { _ in Circle().fill(Color(red: 1, green: 0.93, blue: 0.7)).frame(width: 12, height: 12) }
+            }
+            .offset(y: -3)
+            Bucket().fill(fresh ? Color(red: 0.98, green: 0.2, blue: 0.08) : Color(red: 0.04, green: 0.75, blue: 0.29))
+                .overlay(Bucket().stroke(.white.opacity(0.7), style: StrokeStyle(lineWidth: 2, dash: [3, 4])))
+                .frame(width: 24, height: 22).offset(y: 6)
+        }
+        .frame(width: 30, height: 30)
+        .rotationEffect(.degrees(fresh ? 0 : -100))
+    }
+    private struct Bucket: Shape {
+        func path(in r: CGRect) -> Path {
+            Path { p in
+                p.move(to: CGPoint(x: r.minX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+                p.addLine(to: CGPoint(x: r.maxX - r.width * 0.18, y: r.maxY)); p.addLine(to: CGPoint(x: r.minX + r.width * 0.18, y: r.maxY))
+                p.closeSubpath()
+            }
+        }
+    }
+}
+
+/// Metacritic-style score: green 61+, yellow 40–60, red below 40. Square for the Metascore, round for users.
+struct ScoreBadge: View {
+    let score: Double
+    let text: String
+    let circle: Bool
+    let caption: String
+    var body: some View {
+        let color = score >= 61 ? Color(red: 0.4, green: 0.8, blue: 0.2) : score >= 40 ? Color(red: 1, green: 0.8, blue: 0.2) : Color(red: 0.94, green: 0.15, blue: 0.15)
+        HStack(spacing: 8) {
+            Text(text).font(.system(size: 20, weight: .heavy)).foregroundStyle(score >= 40 && score < 61 ? .black : .white)
+                .frame(width: 44, height: 36)
+                .background(color, in: circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 6)))
+            Text(caption).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct Star: Shape {
+    let points: Int
+    let inner: CGFloat
+    func path(in r: CGRect) -> Path {
+        let c = CGPoint(x: r.midX, y: r.midY), outer = min(r.width, r.height) / 2
+        var p = Path()
+        for i in 0..<(points * 2) {
+            let radius = i.isMultiple(of: 2) ? outer : outer * inner
+            let a = Double(i) * .pi / Double(points) - .pi / 2
+            let pt = CGPoint(x: c.x + CGFloat(cos(a)) * radius, y: c.y + CGFloat(sin(a)) * radius)
+            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+        }
+        p.closeSubpath()
+        return p
     }
 }
 

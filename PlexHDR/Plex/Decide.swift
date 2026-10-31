@@ -73,12 +73,25 @@ enum Decide {
 
     static func hdrLabel(_ v: PlexStream?) -> String {
         guard let v else { return "SDR" }
-        let t = "\(v.extendedDisplayTitle) \(v.displayTitle)"
-        if v.doviPresent { return "Dolby Vision P\(v.doviProfile.map(String.init) ?? "?")" + ((v.doviBLCompatID ?? 0) > 0 ? " (HDR10 base)" : "") }
-        if t.contains("HDR10+") { return "HDR10+" }
+        if v.doviPresent {
+            let dv = "Dolby Vision P\(v.doviProfile.map(String.init) ?? "?")"
+            // Many DV profile 8 files also carry HDR10+ metadata; that's what a Samsung TV shows.
+            if isHDR10Plus(v) { return dv + " + HDR10+" }
+            return dv + ((v.doviBLCompatID ?? 0) > 0 ? " (HDR10 base)" : "")
+        }
+        if isHDR10Plus(v) { return "HDR10+" }
         if v.colorTrc == "smpte2084" { return "HDR10" }
         if v.colorTrc == "arib-std-b67" { return "HLG" }
         return "SDR"
+    }
+
+    static func isHDR10Plus(_ v: PlexStream?) -> Bool {
+        guard let v else { return false }
+        return "\(v.extendedDisplayTitle) \(v.displayTitle) \(v.title ?? "")".uppercased().contains("HDR10+")
+    }
+
+    static func is8K(_ m: PlexMedia?) -> Bool {
+        (m?.videoResolution ?? "").lowercased() == "8k" || (m?.width ?? 0) >= 7000
     }
 
     static func audioLabel(_ s: PlexStream?) -> String { s?.extendedDisplayTitle ?? "None" }
@@ -158,7 +171,7 @@ enum Decide {
                     note = "Dolby Atmos (DD+) through Apple's decoder: Atmos to the soundbar, Spatial Audio with height on AirPods."
                 } else if settings.remuxForAtmos {
                     engine = .appleRemux
-                    note = "Dolby Atmos (DD+): the server repackages the file (nothing re-encoded) so Apple's decoder keeps the Atmos objects. Experimental."
+                    note = "Dolby Atmos (DD+): the server repackages the MKV as HLS (nothing re-encoded) so Apple's decoder sends Dolby Atmos instead of PCM."
                 } else {
                     note += " Atmos height objects are folded into the 7.1 mix."
                 }
@@ -167,6 +180,9 @@ enum Decide {
             }
         } else {
             note = "Original file, decoded on the Apple TV."
+        }
+        if is8K(media) {
+            warnings.append("Apple TV outputs at most 4K, so this 8K file is scaled to 4K. Use the TV's own Plex HDR app for 8K.")
         }
         if let video, video.doviPresent, video.doviProfile == 5 {
             warnings.append("Dolby Vision profile 5 has no HDR10 layer; the player converts it to HDR10.")
@@ -184,12 +200,14 @@ enum Decide {
     static func badges(_ plan: Plan) -> [String] {
         var out: [String] = []
         let m = plan.media
-        if m?.videoResolution?.lowercased() == "4k" || (m?.width ?? 0) >= 3800 { out.append("4K") }
+        if is8K(m) { out.append("8K") }
+        else if m?.videoResolution?.lowercased() == "4k" || (m?.width ?? 0) >= 3800 { out.append("4K") }
         else if let r = m?.videoResolution, r.contains("1080") || r.contains("720") { out.append("HD") }
         if let v = plan.video {
             let h = hdrLabel(v)
+            if isHDR10Plus(v) { out.append("HDR10+") }
             if v.doviPresent { out.append("Dolby Vision") }
-            else if h != "SDR" { out.append(h) }
+            else if !isHDR10Plus(v) && h != "SDR" { out.append(h) }
         }
         if let a = plan.audio {
             if isAtmos(a) { out.append("Dolby Atmos") }

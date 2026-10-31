@@ -21,6 +21,12 @@ struct LibraryView: View {
     ]
     private let columns = Array(repeating: GridItem(.fixed(260), spacing: 50), count: 6)
 
+    init(section: PlexSection) {
+        self.section = section
+        // Films open newest release first; shows stay alphabetical.
+        _sort = State(initialValue: section.type == "movie" ? "originallyAvailableAt:desc" : "titleSort")
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
