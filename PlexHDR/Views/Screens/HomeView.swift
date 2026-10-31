@@ -16,10 +16,10 @@ struct HomeView: View {
         ZStack {
             Backdrop(item: focusedItem ?? shelf[safe: heroIndex])
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 30) {
+                VStack(alignment: .leading, spacing: 30.s) {
                     if !shelf.isEmpty {
                         TopShelf(items: shelf, index: $heroIndex)
-                            .frame(height: 840)
+                            .frame(height: 840.s)
                             .onChange(of: heroIndex) { _, _ in focusedItem = nil }
                     }
                     if !continueWatching.isEmpty {
@@ -29,7 +29,7 @@ struct HomeView: View {
                         ItemRow(title: "Recently Added in \(row.section.title)", items: row.items) { focusedItem = $0 }
                     }
                 }
-                .padding(.bottom, 80)
+                .padding(.bottom, 80.s)
             }
             .scrollClipDisabled()
             if let error, !loaded { ErrorView(message: error) { Task { await load() } } }
@@ -82,10 +82,10 @@ struct TopShelf: View {
     private var full: PlexItem { details[item.id] ?? item }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 22.s) {
             Spacer()
             TitleLogo(item: full)
-            HStack(spacing: 16) {
+            HStack(spacing: 16.s) {
                 if let ep = item.episodeLabel { Text("\(ep) · \(item.title)") }
                 if let y = full.year { Text(String(y)) }
                 if let r = full.contentRating { Badge(text: r) }
@@ -94,32 +94,39 @@ struct TopShelf: View {
             }
             .font(.callout).foregroundStyle(.secondary)
             if let ratings, !ratings.isEmpty, AppSettings.shared.showRatings { RatingsRow(ratings: ratings) }
-            Text(full.summary ?? "").font(.callout).lineLimit(3).frame(maxWidth: 1000, alignment: .leading).foregroundStyle(.white.opacity(0.85))
-            HStack(spacing: 30) {
+            Text(full.summary ?? "").font(.callout).lineLimit(3).frame(maxWidth: 1000.s, alignment: .leading).foregroundStyle(.white.opacity(0.85))
+            HStack(spacing: 30.s) {
                 Button {
                     presenter.play(full)
                 } label: {
-                    Label(item.viewOffsetMs > 0 ? "Resume" : "Play", systemImage: "play.fill").frame(minWidth: 220)
+                    Label(item.viewOffsetMs > 0 ? "Resume" : "Play", systemImage: "play.fill").frame(minWidth: 220.s)
                 }
                 .focused($focus, equals: .play)
                 NavigationLink(value: Route.item(item.type == "episode" ? item : full)) {
-                    Label("More Info", systemImage: "info.circle").frame(minWidth: 220)
+                    Label("More Info", systemImage: "info.circle").frame(minWidth: 220.s)
                 }
                 .focused($focus, equals: .info)
                 Spacer()
-                HStack(spacing: 10) {
+                HStack(spacing: 10.s) {
                     ForEach(items.indices, id: \.self) { i in
-                        Circle().fill(i == index ? .white : .white.opacity(0.35)).frame(width: 12, height: 12)
+                        Circle().fill(i == index ? .white : .white.opacity(0.35)).frame(width: 12.s, height: 12.s)
                     }
                 }
             }
-            .onMoveCommand { dir in
+            .onRemoteMove { dir in
                 if dir == .left && focus == .play { flip(-1) }
                 if dir == .right && focus == .info { flip(1) }
             }
         }
-        .padding(.horizontal, 80).padding(.bottom, 40)
-        .focusSection()
+        .padding(.horizontal, 80.s).padding(.bottom, 40.s)
+        .tvFocusSection()
+        #if !os(tvOS)
+        // Touch and trackpad: swipe between titles.
+        .gesture(DragGesture(minimumDistance: 40).onEnded { v in
+            guard abs(v.translation.width) > abs(v.translation.height) else { return }
+            flip(v.translation.width < 0 ? 1 : -1)
+        })
+        #endif
         .task(id: item.id) {
             if details[item.id] == nil, let rk = item.ratingKey, let m = try? await PlexClient.shared.metadata(rk) { details[item.id] = m }
             ratings = nil
@@ -127,7 +134,7 @@ struct TopShelf: View {
         }
         .task(id: "\(index)-\(focus != nil)") {
             // Auto-advance only while the shelf has focus, like the Apple TV app.
-            guard focus != nil, items.count > 1 else { return }
+            guard focus != nil || !Platform.isTV, items.count > 1 else { return }
             try? await Task.sleep(nanoseconds: 9_000_000_000)
             if !Task.isCancelled { flip(1) }
         }

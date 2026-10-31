@@ -11,6 +11,29 @@ TMDB artwork, per-title memory, cast & crew).
 The player is [KSPlayer](https://github.com/kingslay/KSPlayer) (GPL build, FFmpeg + Metal). It is pinned to one
 commit in `project.yml` because its core ships as a binary framework.
 
+## Apple TV, Mac, iPhone and iPad
+
+The same app builds for four devices from one codebase (three Xcode targets):
+
+| | Apple TV (`PlexHDR`) | Mac (`PlexHDR-macOS`) | iPhone and iPad (`PlexHDR-iOS`) |
+|---|---|---|---|
+| Player | KSPlayer (FFmpeg), AVPlayer for DD+ Atmos | KSPlayer (FFmpeg), AVPlayer for DD+ Atmos | AVPlayer |
+| MKV | Opened directly | Opened directly | Repackaged by the Plex server as HLS (video and Atmos copied, not re-encoded) |
+| TrueHD, DTS | Decoded to multichannel PCM | Decoded to multichannel PCM | Converted to Dolby Digital Plus by the server |
+| Dolby Atmos (DD+) | Apple's decoder | Apple's decoder | Apple's decoder |
+| Spatial Audio on AirPods | Yes | Yes (macOS does it) | Yes |
+| Subtitles | All, including PGS | All, including PGS | Text (SRT, VTT, ASS); PGS not shown |
+| Controls | Siri Remote | Mouse, trackpad, keyboard | Touch, keyboard; AirPlay and Picture in Picture |
+| Minimum | tvOS 17 | macOS 14 | iOS/iPadOS 17 |
+
+Why AVPlayer on iPhone and iPad: KSPlayer's free build only ships Apple TV and Mac binaries (iPhone/iPad need its
+paid LGPL build). AVPlayer still gives Dolby Vision, HDR10, Dolby Atmos and Spatial Audio; the server does the
+container work, which Plex does without re-encoding the video. If AVPlayer refuses an HEVC stream from the server, the
+app asks the server for H.264 instead (SDR) so the title still plays.
+
+The layout is designed for a TV and scaled down on other screens. Sign-in on a Mac, iPhone or iPad opens the Plex page
+in the browser (the code and QR code still work too).
+
 ## What the Apple TV allows
 
 | Goal | Here | Why |
@@ -141,10 +164,18 @@ The app needs a real Apple TV: KSPlayer's binary framework has no tvOS Simulator
 On the Apple TV, turn on **Settings → Video and Audio → Match Content → Match Dynamic Range** and **Match Frame Rate**.
 For a soundbar or receiver, set **Audio Format → Change Format** to Dolby Atmos if it supports it.
 
+## Install on a Mac, iPhone or iPad
+
+Same `./scripts/setup.sh`, then in Xcode pick the **PlexHDR-macOS** scheme and **My Mac**, or **PlexHDR-iOS** and your
+iPhone/iPad (connected by cable or on the same network, with Developer Mode on: Settings → Privacy & Security). Set
+your Team under Signing & Capabilities for that target and press Run. The 7-day limit of a free Apple ID applies to
+iPhone and iPad too; the Mac build runs without one.
+
 ## How the code is laid out
 | File | Role |
 |---|---|
-| `project.yml` | XcodeGen project: tvOS 17+, KSPlayer package, Info.plist |
+| `project.yml` | XcodeGen project: Apple TV, Mac and iPhone/iPad targets, KSPlayer package, Info.plists |
+| `PlexHDR/App/Platform.swift` | What differs per device: layout scale, remote vs. touch modifiers, Plex device names |
 | `PlexHDR/App/PlexHDRApp.swift` | App entry, audio session (movie mode, multichannel, Spatial Audio), player defaults, routes |
 | `PlexHDR/Plex/PlexClient.swift` | plex.tv PIN sign-in, Plex Home users, server discovery, library API, playback URLs, progress |
 | `PlexHDR/Plex/PlexModels.swift` | Lenient wrappers for Plex JSON (items, media, parts, streams, markers, chapters, people) |
@@ -154,8 +185,10 @@ For a soundbar or receiver, set **Audio Format → Change Format** to Dolby Atmo
 | `PlexHDR/Services/BIF.swift` | Plex preview thumbnails |
 | `PlexHDR/Services/AppSettings.swift`, `Keys.swift` | Settings and optional build-time keys |
 | `PlexHDR/Views/Screens/` | Home + top shelf, libraries, show, details, person, collection, search, settings, sign-in |
-| `PlexHDR/Views/Player/` | Player controller (KSPlayer), overlay, timeline, scrubbing, panel tabs, Skip Intro, Up Next |
-| `.github/workflows/build.yml` | Builds the app on a GitHub macOS runner on every push |
+| `PlexHDR/Views/Player/` | Player controller (KSPlayer), overlay, timeline, scrubbing, panel tabs, Skip Intro, Up Next, touch controls |
+| `PlexHDR/Views/Player/AVPlayerBackend.swift` | iPhone/iPad: AVPlayer in place of KSPlayer, with its own text subtitle renderer |
+| `Shared/AppIcon.xcassets` | Icon for the Mac and iPhone/iPad apps |
+| `.github/workflows/build.yml` | Builds all three apps on a GitHub macOS runner on every push |
 
 ## What has and hasn't been checked
 - Builds cleanly for tvOS with Xcode 26.3 (GitHub Actions, unsigned device build, on every push).

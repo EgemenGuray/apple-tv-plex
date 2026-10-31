@@ -26,11 +26,11 @@ struct DetailView: View {
         ZStack {
             Backdrop(item: it)
             ScrollView {
-                VStack(alignment: .leading, spacing: 50) {
-                    header.frame(minHeight: 900, alignment: .bottomLeading)
+                VStack(alignment: .leading, spacing: 50.s) {
+                    header.frame(minHeight: 900.s, alignment: .bottomLeading)
                     rows
                 }
-                .padding(.bottom, 80)
+                .padding(.bottom, 80.s)
             }
             .scrollClipDisabled()
         }
@@ -38,24 +38,27 @@ struct DetailView: View {
         .task { await load() }
         .onChange(of: presenter.playbackEnded) { _, _ in Task { await load() } }
         .sheet(item: $sheet) { s in
-            switch s {
-            case .tracks: TrackPicker(plan: plan, audioId: $audioId, subtitleId: $subtitleId, item: it)
-            case .version: VersionPicker(item: it, mediaIndex: $mediaIndex)
-            case .info: TechInfo(item: it, plan: plan)
+            Group {
+                switch s {
+                case .tracks: TrackPicker(plan: plan, audioId: $audioId, subtitleId: $subtitleId, item: it)
+                case .version: VersionPicker(item: it, mediaIndex: $mediaIndex)
+                case .info: TechInfo(item: it, plan: plan)
+                }
             }
+            .sheetDoneButton()
         }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 22.s) {
             Spacer(minLength: 200)
             if it.type == "episode" {
                 Text(it.grandparentTitle ?? "").font(.title3).foregroundStyle(.secondary)
-                Text(it.title).font(.system(size: 64, weight: .heavy)).lineLimit(2)
+                Text(it.title).font(.system(size: 64.s, weight: .heavy)).lineLimit(2)
             } else {
                 TitleLogo(item: it)
             }
-            HStack(spacing: 16) {
+            HStack(spacing: 16.s) {
                 if let ep = it.episodeLabel { Text(ep) }
                 if let y = it.year { Text(String(y)) }
                 if let r = it.contentRating { Badge(text: r) }
@@ -66,19 +69,19 @@ struct DetailView: View {
             .font(.callout).foregroundStyle(.secondary)
             if let ratings, !ratings.isEmpty, settings.showRatings { RatingsRow(ratings: ratings) }
             if let t = it.tagline { Text(t).font(.headline) }
-            Text(it.summary ?? "").font(.callout).lineLimit(4).frame(maxWidth: 1200, alignment: .leading)
-            VStack(alignment: .leading, spacing: 6) {
+            Text(it.summary ?? "").font(.callout).lineLimit(4).frame(maxWidth: 1200.s, alignment: .leading)
+            VStack(alignment: .leading, spacing: 6.s) {
                 Text(plan.note)
                 ForEach(plan.warnings, id: \.self) { Text("⚠︎ " + $0).foregroundStyle(.yellow) }
             }
-            .font(.caption).foregroundStyle(.secondary).frame(maxWidth: 1400, alignment: .leading)
+            .font(.caption).foregroundStyle(.secondary).frame(maxWidth: 1400.s, alignment: .leading)
             actions
         }
-        .padding(.horizontal, 80)
+        .padding(.horizontal, 80.s)
     }
 
     private var actions: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 24.s) {
             Button { play(from: nil) } label: {
                 Label(resume > 0 ? "Resume \(formatTime(resume))" : "Play", systemImage: "play.fill")
             }
@@ -99,35 +102,36 @@ struct DetailView: View {
             Button { sheet = .info } label: { Image(systemName: "info.circle") }
         }
         .labelStyle(.titleAndIcon)
-        .focusSection()
+        .scrollsHorizontallyOnSmallScreens()
+        .tvFocusSection()
     }
 
     @ViewBuilder private var rows: some View {
         let chapters = it.chapters
         if chapters.count > 1 {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Chapters").font(.title3.bold()).padding(.leading, 80)
+            VStack(alignment: .leading, spacing: 16.s) {
+                Text("Chapters").font(.title3.bold()).padding(.leading, 80.s)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 40) {
+                    LazyHStack(spacing: 40.s) {
                         ForEach(chapters.indices, id: \.self) { i in
                             let c = chapters[i]
                             Button { play(from: c.start) } label: {
-                                VStack(alignment: .leading, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 8.s) {
                                     RemoteImage(url: PlexClient.shared.imageURL(c.thumb ?? it.thumb, width: 480, height: 270))
-                                        .frame(width: 400, height: 225).clipShape(RoundedRectangle(cornerRadius: 10))
+                                        .frame(width: 400.s, height: 225.s).clipShape(RoundedRectangle(cornerRadius: 10.s))
                                     Text(c.title).font(.caption).lineLimit(1)
                                     Text(formatTime(c.start)).font(.caption2).foregroundStyle(.secondary)
                                 }
-                                .frame(width: 400, alignment: .leading)
+                                .frame(width: 400.s, alignment: .leading)
                             }
                             .buttonStyle(LiftButtonStyle())
                         }
                     }
-                    .padding(.horizontal, 80).padding(.vertical, 30)
+                    .padding(.horizontal, 80.s).padding(.vertical, 30.s)
                 }
                 .scrollClipDisabled()
             }
-            .focusSection()
+            .tvFocusSection()
         }
         if it.type == "episode", season.count > 1 {
             ItemRow(title: "Season \(it.parentIndex ?? 0)", items: season, wide: true)
@@ -161,29 +165,29 @@ struct CastRow: View {
     var body: some View {
         let people = merged
         if !people.isEmpty {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Cast & Crew").font(.title3.bold()).padding(.leading, 80)
+            VStack(alignment: .leading, spacing: 16.s) {
+                Text("Cast & Crew").font(.title3.bold()).padding(.leading, 80.s)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 40) {
+                    LazyHStack(alignment: .top, spacing: 40.s) {
                         ForEach(people, id: \.person.id) { entry in
                             NavigationLink(value: Route.person(entry.person)) {
-                                VStack(spacing: 10) {
+                                VStack(spacing: 10.s) {
                                     RemoteImage(url: PlexClient.shared.imageURL(entry.person.thumb, width: 300, height: 300))
                                         .overlay { if entry.person.thumb == nil { Text(initials(entry.person.name)).font(.title.bold()) } }
-                                        .frame(width: 180, height: 180).clipShape(Circle())
+                                        .frame(width: 180.s, height: 180.s).clipShape(Circle())
                                     Text(entry.person.name).font(.caption).lineLimit(1)
                                     Text(entry.jobs).font(.caption2).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.center)
                                 }
-                                .frame(width: 200)
+                                .frame(width: 200.s)
                             }
                             .buttonStyle(LiftButtonStyle())
                         }
                     }
-                    .padding(.horizontal, 80).padding(.vertical, 30)
+                    .padding(.horizontal, 80.s).padding(.vertical, 30.s)
                 }
                 .scrollClipDisabled()
             }
-            .focusSection()
+            .tvFocusSection()
         }
     }
 
@@ -205,20 +209,20 @@ struct ExtrasRow: View {
     let extras: [PlexItem]
     @EnvironmentObject private var presenter: PlayerPresenter
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Extras").font(.title3.bold()).padding(.leading, 80)
+        VStack(alignment: .leading, spacing: 16.s) {
+            Text("Extras").font(.title3.bold()).padding(.leading, 80.s)
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 40) {
+                LazyHStack(spacing: 40.s) {
                     ForEach(extras) { e in
                         Button { presenter.play(e, from: 0) } label: { WideCard(item: e, width: 400) }
                             .buttonStyle(LiftButtonStyle())
                     }
                 }
-                .padding(.horizontal, 80).padding(.vertical, 30)
+                .padding(.horizontal, 80.s).padding(.vertical, 30.s)
             }
             .scrollClipDisabled()
         }
-        .focusSection()
+        .tvFocusSection()
     }
 }
 
@@ -232,7 +236,7 @@ struct TrackPicker: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        HStack(alignment: .top, spacing: 60) {
+        HStack(alignment: .top, spacing: 60.s) {
             List {
                 Section("Audio") {
                     ForEach(plan.part?.audioStreams ?? []) { s in
@@ -253,7 +257,7 @@ struct TrackPicker: View {
                 }
             }
         }
-        .padding(60)
+        .padding(60.s)
     }
 
     private func row(_ title: String, selected: Bool) -> some View {
@@ -290,7 +294,7 @@ struct VersionPicker: View {
                 }
             }
         }
-        .padding(60)
+        .padding(60.s)
     }
 }
 
@@ -300,7 +304,7 @@ struct TechInfo: View {
     let plan: Decide.Plan
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 14.s) {
                 Text(item.title).font(.title2.bold())
                 if let f = plan.part?.file { line("File", (f as NSString).lastPathComponent) }
                 if let s = plan.part?.size { line("Size", ByteCountFormatter.string(fromByteCount: s, countStyle: .file)) }
@@ -318,10 +322,10 @@ struct TechInfo: View {
                 line("Output", AudioSetup.routeDescription)
             }
             .font(.callout)
-            .padding(60)
+            .padding(60.s)
         }
     }
     private func line(_ k: String, _ v: String) -> some View {
-        HStack(alignment: .top) { Text(k).foregroundStyle(.secondary).frame(width: 260, alignment: .leading); Text(v) }
+        HStack(alignment: .top) { Text(k).foregroundStyle(.secondary).frame(width: 260.s, alignment: .leading); Text(v) }
     }
 }

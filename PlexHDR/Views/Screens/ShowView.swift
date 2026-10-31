@@ -21,14 +21,14 @@ struct ShowView: View {
         ZStack {
             Backdrop(item: s)
             ScrollView {
-                VStack(alignment: .leading, spacing: 40) {
-                    header.frame(minHeight: 780, alignment: .bottomLeading)
+                VStack(alignment: .leading, spacing: 40.s) {
+                    header.frame(minHeight: 780.s, alignment: .bottomLeading)
                     seasonPills
                     if !episodes.isEmpty { episodeRow }
                     CastRow(item: s)
                     if !similar.isEmpty { ItemRow(title: "More Like This", items: similar) }
                 }
-                .padding(.bottom, 80)
+                .padding(.bottom, 80.s)
             }
             .scrollClipDisabled()
         }
@@ -42,10 +42,10 @@ struct ShowView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 22.s) {
             Spacer(minLength: 200)
             TitleLogo(item: s)
-            HStack(spacing: 16) {
+            HStack(spacing: 16.s) {
                 if let y = s.year { Text(String(y)) }
                 if let r = s.contentRating { Badge(text: r) }
                 if let n = s.childCount { Text("\(n) Season\(n == 1 ? "" : "s")") }
@@ -54,8 +54,8 @@ struct ShowView: View {
             }
             .font(.callout).foregroundStyle(.secondary)
             if let ratings, !ratings.isEmpty, settings.showRatings { RatingsRow(ratings: ratings) }
-            Text(s.summary ?? "").font(.callout).lineLimit(4).frame(maxWidth: 1200, alignment: .leading)
-            HStack(spacing: 24) {
+            Text(s.summary ?? "").font(.callout).lineLimit(4).frame(maxWidth: 1200.s, alignment: .leading)
+            HStack(spacing: 24.s) {
                 if let ep = nextUp {
                     Button { presenter.play(ep) } label: {
                         Label(ep.viewOffsetMs > 0 ? "Resume \(ep.episodeLabel ?? "")" : "Play \(ep.episodeLabel ?? "")", systemImage: "play.fill")
@@ -65,14 +65,14 @@ struct ShowView: View {
                     Task { await PlexClient.shared.setWatched(s, !s.isWatched); await load() }
                 } label: { Label(s.isWatched ? "Mark Unwatched" : "Mark Watched", systemImage: s.isWatched ? "checkmark.circle.fill" : "checkmark.circle") }
             }
-            .focusSection()
+            .tvFocusSection()
         }
-        .padding(.horizontal, 80)
+        .padding(.horizontal, 80.s)
     }
 
     private var seasonPills: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 20) {
+            HStack(spacing: 20.s) {
                 ForEach(seasons) { season in
                     SeasonPill(title: season.title, selected: season.ratingKey == seasonKey) {
                         // Moving onto a season loads it.
@@ -80,37 +80,37 @@ struct ShowView: View {
                     }
                 }
             }
-            .padding(.horizontal, 80).padding(.vertical, 20)
+            .padding(.horizontal, 80.s).padding(.vertical, 20.s)
         }
-        .focusSection()
+        .tvFocusSection()
     }
 
     private var episodeRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(alignment: .top, spacing: 40) {
+            LazyHStack(alignment: .top, spacing: 40.s) {
                 ForEach(episodes) { ep in
                     NavigationLink(value: Route.item(ep)) {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 8.s) {
                             RemoteImage(url: PlexClient.shared.imageURL(ep.thumb, width: 720, height: 405))
-                                .frame(width: 480, height: 270)
+                                .frame(width: 480.s, height: 270.s)
                                 .overlay(alignment: .bottom) { ProgressLine(progress: ep.progress) }
                                 .overlay(alignment: .topTrailing) {
-                                    if ep.isWatched { Image(systemName: "checkmark.circle.fill").padding(10) }
+                                    if ep.isWatched { Image(systemName: "checkmark.circle.fill").padding(10.s) }
                                 }
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .clipShape(RoundedRectangle(cornerRadius: 12.s))
                             Text("\(ep.index ?? 0). \(ep.title)").font(.callout).lineLimit(1)
                             Text(ep.summary ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(3)
                             if let d = formatDuration(ep.durationMs) { Text(d).font(.caption2).foregroundStyle(.secondary) }
                         }
-                        .frame(width: 480, alignment: .leading)
+                        .frame(width: 480.s, alignment: .leading)
                     }
                     .buttonStyle(LiftButtonStyle())
                 }
             }
-            .padding(.horizontal, 80).padding(.vertical, 30)
+            .padding(.horizontal, 80.s).padding(.vertical, 30.s)
         }
         .scrollClipDisabled()
-        .focusSection()
+        .tvFocusSection()
     }
 
     private func load() async {

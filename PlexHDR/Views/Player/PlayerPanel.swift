@@ -6,30 +6,38 @@ struct PlayerPanel: View {
     @FocusState private var focusedTab: PlayerController.Panel?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 30) {
-            HStack(spacing: 20) {
+        VStack(alignment: .leading, spacing: 30.s) {
+            HStack(spacing: 20.s) {
                 ForEach(PlayerController.Panel.allCases) { p in
                     Button { c.panel = p } label: { Text(p.title).font(.callout.weight(.semibold)) }
                         .focused($focusedTab, equals: p)
                         .tint(c.panel == p ? .white : nil)
+                        #if !os(tvOS)
+                        .buttonStyle(.bordered)
+                        #endif
+                }
+                if !Platform.isTV {
+                    Spacer()
+                    Button { c.panel = nil; c.hideOverlaySoon() } label: { Image(systemName: "xmark.circle.fill").font(.title2) }
+                        .buttonStyle(.plain)
                 }
             }
-            .focusSection()
+            .tvFocusSection()
             .onChange(of: focusedTab) { _, t in if let t { c.panel = t } }
 
             Group {
                 switch c.panel ?? .info {
                 case .info: InfoTab(c: c)
                 case .chapters: ChaptersTab(c: c)
-                case .audio: AudioTab(c: c)
-                case .subtitles: SubtitlesTab(c: c)
+                case .audio: AudioTab(c: c).scrollsHorizontallyOnSmallScreens()
+                case .subtitles: SubtitlesTab(c: c).scrollsHorizontallyOnSmallScreens()
                 case .picture: PictureTab(c: c)
                 }
             }
-            .frame(height: 360, alignment: .topLeading)
-            .focusSection()
+            .frame(height: 360.s, alignment: .topLeading)
+            .tvFocusSection()
         }
-        .padding(.horizontal, 90).padding(.top, 40).padding(.bottom, 60)
+        .padding(.horizontal, 90.s).padding(.top, 40.s).padding(.bottom, 60.s)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.ultraThinMaterial)
         .onAppear { focusedTab = c.panel }
@@ -43,14 +51,14 @@ private struct OptionButton: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 14) {
+            HStack(spacing: 14.s) {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? .primary : .secondary)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 2.s) {
                     Text(title).font(.callout).lineLimit(1)
                     if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
                 }
             }
-            .frame(width: 520, alignment: .leading)
+            .frame(width: 520.s, alignment: .leading)
         }
     }
 }
@@ -58,15 +66,15 @@ private struct OptionButton: View {
 private struct InfoTab: View {
     @ObservedObject var c: PlayerController
     var body: some View {
-        HStack(alignment: .top, spacing: 50) {
-            RemoteImage(url: PlexClient.shared.imageURL(c.item.posterPath, width: 300, height: 450)).frame(width: 200, height: 300)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 12) {
+        HStack(alignment: .top, spacing: 50.s) {
+            RemoteImage(url: PlexClient.shared.imageURL(c.item.posterPath, width: 300, height: 450)).frame(width: 200.s, height: 300.s)
+                .clipShape(RoundedRectangle(cornerRadius: 10.s))
+            VStack(alignment: .leading, spacing: 12.s) {
                 Text(c.item.title).font(.title3.bold())
-                Text(c.item.summary ?? "").font(.caption).lineLimit(4).frame(maxWidth: 1100, alignment: .leading)
+                Text(c.item.summary ?? "").font(.caption).lineLimit(4).frame(maxWidth: 1100.s, alignment: .leading)
                 Text("Video: \(c.videoInfo)").font(.caption)
                 Text("Audio: \(c.audioInfo)").font(.caption)
-                Text("Player: \(c.engineName) · \(c.plan.note)").font(.caption2).foregroundStyle(.secondary).frame(maxWidth: 1300, alignment: .leading)
+                Text("Player: \(c.engineName) · \(c.plan.note)").font(.caption2).foregroundStyle(.secondary).frame(maxWidth: 1300.s, alignment: .leading)
                 // A focusable element so the tab's content can take focus.
                 Button("Close") { c.panel = nil }
             }
@@ -82,26 +90,26 @@ private struct ChaptersTab: View {
             Text("This file has no chapters.").foregroundStyle(.secondary)
         } else {
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 30) {
+                LazyHStack(spacing: 30.s) {
                     ForEach(chapters.indices, id: \.self) { i in
                         let ch = chapters[i]
                         Button { c.seek(to: ch.start); c.panel = nil } label: {
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: 6.s) {
                                 Group {
                                     if let t = ch.thumb { RemoteImage(url: PlexClient.shared.imageURL(t, width: 480, height: 270)) }
                                     else if let img = c.bif?.image(at: ch.start + 5) { Image(uiImage: img).resizable().aspectRatio(contentMode: .fill) }
                                     else { Color.white.opacity(0.08) }
                                 }
-                                .frame(width: 360, height: 202).clipShape(RoundedRectangle(cornerRadius: 10))
+                                .frame(width: 360.s, height: 202.s).clipShape(RoundedRectangle(cornerRadius: 10.s))
                                 Text(ch.title).font(.caption).lineLimit(1)
                                 Text(formatTime(ch.start)).font(.caption2).foregroundStyle(.secondary)
                             }
-                            .frame(width: 360, alignment: .leading)
+                            .frame(width: 360.s, alignment: .leading)
                         }
                         .buttonStyle(LiftButtonStyle())
                     }
                 }
-                .padding(.vertical, 20)
+                .padding(.vertical, 20.s)
             }
             .scrollClipDisabled()
         }
@@ -111,26 +119,26 @@ private struct ChaptersTab: View {
 private struct AudioTab: View {
     @ObservedObject var c: PlayerController
     var body: some View {
-        HStack(alignment: .top, spacing: 60) {
+        HStack(alignment: .top, spacing: 60.s) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 12.s) {
                     ForEach(c.plan.part?.audioStreams ?? []) { s in
                         OptionButton(title: s.extendedDisplayTitle, subtitle: detail(s), selected: c.plan.audio?.id == s.id) { c.chooseAudio(s) }
                     }
                 }
             }
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 12.s) {
                 Text("Speed").font(.caption).foregroundStyle(.secondary)
                 ForEach([Float(0.75), 1, 1.25, 1.5, 2], id: \.self) { r in
                     OptionButton(title: "\(r)×", selected: c.rate == r) { c.setRate(r) }
                 }
             }
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8.s) {
                 Text("Output").font(.caption).foregroundStyle(.secondary)
                 Text(AudioSetup.routeDescription).font(.caption)
-                Text("5.1 and 7.1 tracks play as Spatial Audio on AirPods.").font(.caption2).foregroundStyle(.secondary)
+                Text("5.1, 7.1 and Dolby Atmos play as Spatial Audio on AirPods.").font(.caption2).foregroundStyle(.secondary)
             }
-            .frame(width: 420, alignment: .leading)
+            .frame(width: 420.s, alignment: .leading)
         }
     }
     private func detail(_ s: PlexStream) -> String {
@@ -149,9 +157,9 @@ private struct SubtitlesTab: View {
     @State private var message: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 50) {
+        HStack(alignment: .top, spacing: 50.s) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 12.s) {
                     OptionButton(title: "Off", selected: c.plan.subtitle == nil && c.selectedOnlineSubtitle == nil) {
                         Task { await c.select(subtitle: nil) }
                     }
@@ -165,10 +173,10 @@ private struct SubtitlesTab: View {
                     Button { Task { await search() } } label: { Label("Search Online…", systemImage: "magnifyingglass") }
                 }
             }
-            .frame(width: 600)
+            .frame(width: 600.s)
             if searching || !results.isEmpty || message != nil {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 12.s) {
                         if searching { ProgressView() }
                         if let message { Text(message).font(.caption).foregroundStyle(.secondary) }
                         ForEach(results) { r in
@@ -176,9 +184,9 @@ private struct SubtitlesTab: View {
                         }
                     }
                 }
-                .frame(width: 640)
+                .frame(width: 640.s)
             }
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 12.s) {
                 Text("Delay \(String(format: "%+.1f", c.subtitleDelay)) s").font(.caption)
                 HStack {
                     Button("−0.1") { c.adjustSubtitleDelay(-0.1) }
@@ -248,12 +256,13 @@ private struct SubtitlesTab: View {
 private struct PictureTab: View {
     @ObservedObject var c: PlayerController
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12.s) {
             ForEach(PlayerController.Fit.allCases) { f in
                 OptionButton(title: f.label, selected: c.fit == f) { c.fit = f }
             }
-            Text("Frame rate and dynamic range follow the video when \"Match Content\" is on in the Apple TV's Video and Audio settings.")
-                .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: 900, alignment: .leading)
+            Text(Platform.isTV ? "Frame rate and dynamic range follow the video when \"Match Content\" is on in the Apple TV's Video and Audio settings."
+                               : "HDR and Dolby Vision show on HDR screens; the system handles the brightness.")
+                .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: 900.s, alignment: .leading)
         }
     }
 }

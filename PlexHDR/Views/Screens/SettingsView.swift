@@ -40,11 +40,13 @@ struct SettingsView: View {
                 Picker("Audio language", selection: $settings.audioLanguage) {
                     ForEach(languages.indices, id: \.self) { i in Text(languages[i].1).tag(languages[i].0) }
                 }
-                Toggle("Apple decoder for Dolby Atmos (MP4)", isOn: $settings.appleDecoderForAtmos)
-                Toggle("Dolby Atmos from MKV (server repackages, no re-encode)", isOn: $settings.remuxForAtmos)
+                if Platform.hasFFmpeg {
+                    Toggle("Apple decoder for Dolby Atmos (MP4)", isOn: $settings.appleDecoderForAtmos)
+                    Toggle("Dolby Atmos from MKV (server repackages, no re-encode)", isOn: $settings.remuxForAtmos)
+                }
                 LabeledContent("Current output", value: AudioSetup.routeDescription)
             } header: { Text("Audio") } footer: {
-                Text("Every track is decoded on the Apple TV and sent as multichannel PCM (up to 7.1). On AirPods and Beats, tvOS plays 5.1/7.1 as Spatial Audio with head tracking. Dolby Atmos height objects are only kept with Apple's decoder, which needs a DD+ Atmos track in an MP4, or the experimental remux for MKV. For Spatial Audio, turn it on in Control Center on the Apple TV while the AirPods are connected.")
+                Text(Platform.hasFFmpeg ? Self.ffmpegAudioNote : Self.appleAudioNote)
             }
 
             Section("Subtitles") {
@@ -75,7 +77,7 @@ struct SettingsView: View {
                 Toggle("Skip credits automatically", isOn: $settings.autoSkipCredits)
                 Picker("Skip back", selection: $settings.skipBack) { ForEach([5, 10, 15, 30], id: \.self) { Text("\($0) s").tag($0) } }
                 Picker("Skip forward", selection: $settings.skipForward) { ForEach([10, 15, 30, 60], id: \.self) { Text("\($0) s").tag($0) } }
-                Toggle("Match frame rate", isOn: $settings.matchFrameRate)
+                if Platform.isTV { Toggle("Match frame rate", isOn: $settings.matchFrameRate) }
             }
 
             Section {
@@ -89,21 +91,32 @@ struct SettingsView: View {
                 SecureField("OpenSubtitles password", text: $settings.openSubtitlesPassword)
                     .onChange(of: settings.openSubtitlesPassword) { _, _ in Online.shared.resetLogin() }
             } header: { Text("Online services") } footer: {
-                Text("All free. TMDB: themoviedb.org → Settings → API. OMDb: omdbapi.com. OpenSubtitles: opensubtitles.com → API consumers. Typing is easier with the Apple TV Remote on your iPhone.")
+                Text("All free. TMDB: themoviedb.org → Settings → API. OMDb: omdbapi.com. OpenSubtitles: opensubtitles.com → API consumers." + (Platform.isTV ? " Typing is easier with the Apple TV Remote on your iPhone." : ""))
             }
 
-            Section("Remote") {
-                LabeledContent("Click / Play-Pause", value: "Play or pause; presses Skip Intro / Up Next when shown")
-                LabeledContent("◀ ▶ (click or swipe)", value: "Back \(settings.skipBack) s / forward \(settings.skipForward) s; while paused: scrub with thumbnails")
-                LabeledContent("Swipe down", value: "Info, chapters, audio, subtitles, picture")
-                LabeledContent("Swipe up", value: "Show the timeline")
-                LabeledContent("Back / Menu", value: "Close the panel, or stop")
+            if Platform.isTV {
+                Section("Remote") {
+                    LabeledContent("Click / Play-Pause", value: "Play or pause; presses Skip Intro / Up Next when shown")
+                    LabeledContent("◀ ▶ (click or swipe)", value: "Back \(settings.skipBack) s / forward \(settings.skipForward) s; while paused: scrub with thumbnails")
+                    LabeledContent("Swipe down", value: "Info, chapters, audio, subtitles, picture")
+                    LabeledContent("Swipe up", value: "Show the timeline")
+                    LabeledContent("Back / Menu", value: "Close the panel, or stop")
+                }
+            } else {
+                Section("Player controls") {
+                    LabeledContent("Tap or click", value: "Show or hide the controls; double-tap to play or pause")
+                    LabeledContent("Timeline", value: "Drag to scrub with thumbnails")
+                    LabeledContent("Keyboard", value: "Space play/pause · ◀ ▶ skip · ▼ panels · Esc close")
+                }
             }
         }
         .task { users = (try? await plex.homeUsers()) ?? [] }
-        .sheet(item: $pinFor) { u in PinPad(user: u) { pin in Task { await switchTo(u, pin: pin) } } }
-        .sheet(isPresented: $showServers) { ServerPickerView() }
+        .sheet(item: $pinFor) { u in PinPad(user: u) { pin in Task { await switchTo(u, pin: pin) } }.sheetDoneButton() }
+        .sheet(isPresented: $showServers) { ServerPickerView().sheetDoneButton() }
     }
+
+    private static let ffmpegAudioNote = "Every track is decoded on \(Platform.deviceNoun) and sent as multichannel PCM (up to 7.1). On AirPods and Beats, 5.1/7.1 plays as Spatial Audio with head tracking. Dolby Atmos height objects are only kept with Apple's decoder, which needs a DD+ Atmos track in an MP4, or the remux for MKV. For Spatial Audio, turn it on in Control Center while the AirPods are connected."
+    private static let appleAudioNote = "Files play through Apple's player. MKV files are repackaged by your Plex server as HLS without re-encoding the video; TrueHD and DTS are converted to Dolby Digital Plus. Dolby Atmos (DD+) is kept, and multichannel audio plays as Spatial Audio on AirPods."
 
     private func switchTo(_ u: PlexClient.HomeUser, pin: String?) async {
         error = nil
@@ -118,14 +131,14 @@ struct PinPad: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 40) {
+        VStack(spacing: 40.s) {
             Text("PIN for \(user.title)").font(.title2.bold())
-            HStack(spacing: 20) {
+            HStack(spacing: 20.s) {
                 ForEach(0..<4, id: \.self) { i in
-                    Circle().fill(i < pin.count ? .white : .white.opacity(0.2)).frame(width: 30, height: 30)
+                    Circle().fill(i < pin.count ? .white : .white.opacity(0.2)).frame(width: 30.s, height: 30.s)
                 }
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(140), spacing: 30), count: 3), spacing: 30) {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(max(140.s, 80)), spacing: 30.s), count: 3), spacing: 30.s) {
                 ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "✓"], id: \.self) { k in
                     Button {
                         switch k {
@@ -135,11 +148,11 @@ struct PinPad: View {
                             pin.append(k)
                             if pin.count == 4 { submit(pin); dismiss() }
                         }
-                    } label: { Text(k).font(.title).frame(width: 100, height: 60) }
+                    } label: { Text(k).font(.title).frame(width: max(100.s, 64), height: max(60.s, 44)) }
                 }
             }
-            .frame(width: 540)
+            .frame(width: max(540.s, 300))
         }
-        .padding(60)
+        .padding(60.s)
     }
 }

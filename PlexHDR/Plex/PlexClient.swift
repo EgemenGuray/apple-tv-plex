@@ -1,5 +1,5 @@
+import Combine
 import Foundation
-import UIKit
 
 enum PlexError: LocalizedError {
     case http(Int, String)
@@ -21,7 +21,7 @@ enum PlexError: LocalizedError {
 final class PlexClient: ObservableObject {
     static let shared = PlexClient()
 
-    static let product = "Plex HDR (tvOS)"
+    static let product = "Plex HDR (\(Platform.plexPlatform))"
     static let version = "0.1.0"
 
     @Published private(set) var token: String?
@@ -61,10 +61,10 @@ final class PlexClient: ObservableObject {
             "X-Plex-Product": Self.product,
             "X-Plex-Version": Self.version,
             "X-Plex-Client-Identifier": clientId,
-            "X-Plex-Platform": "tvOS",
-            "X-Plex-Platform-Version": UIDevice.current.systemVersion,
-            "X-Plex-Device": "Apple TV",
-            "X-Plex-Device-Name": UIDevice.current.name,
+            "X-Plex-Platform": Platform.plexPlatform,
+            "X-Plex-Platform-Version": Platform.systemVersion,
+            "X-Plex-Device": Platform.plexDevice,
+            "X-Plex-Device-Name": Platform.deviceName,
             "X-Plex-Provides": "player",
         ]
     }
@@ -336,11 +336,14 @@ final class PlexClient: ObservableObject {
 
     /// HLS with video and audio both copied: the server only changes the container, so AVPlayer (and its Dolby Atmos
     /// decoder) can play an MKV. Nothing is re-encoded.
-    func remuxURL(_ item: PlexItem, mediaIndex: Int, offset: TimeInterval, session: String) -> URL? {
+    /// `h264Only`: when AVPlayer won't take HEVC from the server's HLS stream, the server converts the video to H.264
+    /// (SDR) as a last resort so the title still plays.
+    func remuxURL(_ item: PlexItem, mediaIndex: Int, offset: TimeInterval, session: String, h264Only: Bool = false) -> URL? {
         guard let server, let rk = item.ratingKey else { return nil }
+        let video = h264Only ? "h264" : "hevc,h264"
         let extra = [
-            "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=hevc,h264&audioCodec=eac3,ac3,aac)",
-            "add-direct-play-profile(type=videoProfile&container=mp4,mov&videoCodec=hevc,h264&audioCodec=eac3,ac3,aac)",
+            "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=\(video)&audioCodec=eac3,ac3,aac)",
+            "add-direct-play-profile(type=videoProfile&container=mp4,mov&videoCodec=\(video)&audioCodec=eac3,ac3,aac)",
         ].joined(separator: "+")
         var p: [String: Any?] = [:]
         for (k, v) in headers { p[k] = v }
@@ -358,7 +361,7 @@ final class PlexClient: ObservableObject {
         p["directStreamAudio"] = 1
         p["videoQuality"] = 100
         p["maxVideoBitrate"] = 200_000
-        p["videoResolution"] = "3840x2160"
+        p["videoResolution"] = h264Only ? "1920x1080" : "3840x2160"
         p["subtitles"] = "none"
         p["offset"] = Int(offset)
         p["session"] = session
@@ -368,6 +371,12 @@ final class PlexClient: ObservableObject {
     func stopTranscode(_ session: String) async {
         guard let server else { return }
         _ = try? await request("GET", Self.url(server.uri, "/video/:/transcode/universal/stop", ["session": session]), token: server.token)
+    }
+
+    /// A subtitle stream inside the file, as a file of its own (used where the player can't read the container).
+    func streamFileURL(_ stream: PlexStream) -> URL? {
+        guard let server else { return nil }
+        return Self.url(server.uri, "/library/streams/\(stream.id)", ["X-Plex-Token": server.token, "format": "srt", "encoding": "utf-8"])
     }
 
     func subtitleURL(_ stream: PlexStream) -> URL? {

@@ -1,12 +1,17 @@
+#if KSPLAYER
 import KSPlayer
+#endif
 import SwiftUI
+#if os(iOS)
+import AVKit
+#endif
 
 /// Full-screen player. Resolves shows/seasons to the episode to play, then hands over to PlayerContainer.
 struct PlayerScreen: View {
     let request: PlayerPresenter.Request
     @State private var item: PlexItem?
     @State private var error: String?
-    @Environment(\.dismiss) private var dismiss
+    private func dismiss() { PlayerPresenter.shared.close() }
 
     var body: some View {
         ZStack {
@@ -75,28 +80,27 @@ struct PlayerContainer: View {
                 ProgressView().scaleEffect(1.5)
             }
             if let err = c.error {
-                Text(err).padding(30).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
+                Text(err).padding(30.s).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16.s))
             }
 
-            // Remote input: a full-screen invisible button holds focus whenever no panel is open.
-            Button { select() } label: { Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity) }
-                .buttonStyle(InvisibleButtonStyle())
-                .focused($rootFocused)
-                .disabled(c.panel != nil)
-                .onMoveCommand(perform: move)
-
+            input
             if c.overlayVisible || c.scrubTime != nil {
                 PlayerOverlay(c: c).transition(.opacity).allowsHitTesting(false)
             }
+            #if !os(tvOS)
+            if c.overlayVisible && c.panel == nil {
+                TouchControls(c: c).transition(.opacity)
+            }
+            #endif
             if let intro = c.introMarker, c.panel == nil {
-                SkipButton(title: "Skip Intro", detail: "\(Int(intro.end - c.time)) s")
+                tappable({ c.skipIntro() }) { SkipButton(title: "Skip Intro", detail: "\(Int(intro.end - c.time)) s") }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(.trailing, 90).padding(.bottom, c.overlayVisible ? 260 : 90)
+                    .padding(.trailing, 90.s).padding(.bottom, c.overlayVisible ? 260.s : 90.s)
             }
             if let next = c.upNext, c.panel == nil {
-                UpNextCard(item: next, countdown: c.upNextCountdown)
+                tappable({ c.playUpNext() }) { UpNextCard(item: next, countdown: c.upNextCountdown) }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(.trailing, 90).padding(.bottom, c.overlayVisible ? 260 : 90)
+                    .padding(.trailing, 90.s).padding(.bottom, c.overlayVisible ? 260.s : 90.s)
             }
             if c.panel != nil {
                 PlayerPanel(c: c)
@@ -107,17 +111,76 @@ struct PlayerContainer: View {
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 0.25), value: c.panel)
         .animation(.easeInOut(duration: 0.3), value: c.overlayVisible)
-        .onPlayPauseCommand {
+        .onPlayPause {
             if c.scrubTime != nil { c.commitScrub() } else { c.togglePlay() }
         }
-        .onExitCommand(perform: back)
+        .onBack(perform: back)
         .onAppear {
             c.onClose = close
             c.start(at: request.startAt)
             rootFocused = true
+            #if os(iOS)
+            UIApplication.shared.isIdleTimerDisabled = true
+            #endif
         }
         .onChange(of: c.panel) { _, p in if p == nil { rootFocused = true } }
-        .onDisappear { TitleMemory.shared.flush() }
+        .onDisappear {
+            TitleMemory.shared.flush()
+            #if os(iOS)
+            UIApplication.shared.isIdleTimerDisabled = false
+            #endif
+        }
+        #if os(iOS)
+        .statusBarHidden()
+        .persistentSystemOverlays(.hidden)
+        #endif
+    }
+
+    /// Siri Remote: a full-screen invisible button holds focus whenever no panel is open, and takes clicks and swipes.
+    /// Touch, mouse and keyboard: tapping shows or hides the controls; Space, the arrow keys and Escape work as on
+    /// the remote.
+    @ViewBuilder private var input: some View {
+        #if os(tvOS)
+        Button { select() } label: { Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity) }
+            .buttonStyle(InvisibleButtonStyle())
+            .focused($rootFocused)
+            .disabled(c.panel != nil)
+            .onMoveCommand(perform: move)
+        #else
+        Color.clear
+            .contentShape(Rectangle())
+            .focusable()
+            .focusEffectDisabled()
+            .focused($rootFocused)
+            .onTapGesture(count: 2) { c.togglePlay() }
+            .onTapGesture {
+                if c.panel != nil { c.panel = nil; c.hideOverlaySoon(); return }
+                if c.overlayVisible && c.isPlaying { withAnimation { c.overlayVisible = false } }
+                else { c.showOverlay(autoHide: c.isPlaying) }
+            }
+            .onContinuousHover { phase in
+                if case .active = phase, !c.overlayVisible { c.showOverlay(autoHide: c.isPlaying) }
+            }
+            .onKeyPress(.space) {
+                if c.scrubTime != nil { c.commitScrub() } else { c.togglePlay() }
+                return .handled
+            }
+            .onKeyPress(.return) { select(); return .handled }
+            .onKeyPress(.leftArrow) { move(.left); return .handled }
+            .onKeyPress(.rightArrow) { move(.right); return .handled }
+            .onKeyPress(.upArrow) { move(.up); return .handled }
+            .onKeyPress(.downArrow) { move(.down); return .handled }
+            .onKeyPress(.escape) { back(); return .handled }
+        #endif
+    }
+
+    /// The Skip Intro and Up Next cards: the remote's click handles them on the TV; elsewhere they are buttons.
+    @ViewBuilder private func tappable<L: View>(_ action: @escaping () -> Void, @ViewBuilder label: () -> L) -> some View {
+        if Platform.isTV {
+            label()
+        } else {
+            Button(action: action, label: label).buttonStyle(.plain)
+        }
     }
 
     private func select() {
@@ -156,7 +219,18 @@ struct InvisibleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View { configuration.label.contentShape(Rectangle()) }
 }
 
-/// Hosts KSPlayer's view (video plus its subtitle renderer).
+/// Hosts the player's view (video plus its subtitle renderer).
+#if os(macOS)
+struct PlayerLayerView: NSViewRepresentable {
+    @ObservedObject var controller: PlayerController
+    func makeNSView(context: Context) -> NSView {
+        controller.layer?.makeUIView() ?? NSView()
+    }
+    func updateNSView(_ view: NSView, context: Context) {
+        controller.layer?.updateUIView(view)
+    }
+}
+#else
 struct PlayerLayerView: UIViewRepresentable {
     @ObservedObject var controller: PlayerController
     func makeUIView(context: Context) -> UIView {
@@ -166,6 +240,83 @@ struct PlayerLayerView: UIViewRepresentable {
         controller.layer?.updateUIView(view)
     }
 }
+#endif
+
+#if !os(tvOS)
+/// On-screen controls for touch and mouse: close, panels and AirPlay at the top, transport in the middle, and a
+/// draggable timeline (the overlay draws it; this layer takes the drag).
+struct TouchControls: View {
+    @ObservedObject var c: PlayerController
+    @GestureState private var dragging = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 22) {
+                control("xmark") { c.close() }
+                Spacer()
+                control("info.circle") { open(.info) }
+                control("list.bullet") { open(.chapters) }
+                control("speaker.wave.2") { open(.audio) }
+                control("captions.bubble") { open(.subtitles) }
+                control("aspectratio") { open(.picture) }
+                #if os(iOS)
+                RoutePicker().frame(width: 44, height: 44)
+                #endif
+            }
+            .padding(.top, 70.s)
+            Spacer()
+            HStack(spacing: 70.s + 20) {
+                control("gobackward.\(AppSettings.shared.skipBack)", big: false) { c.skip(-Double(AppSettings.shared.skipBack)) }
+                control(c.isPlaying ? "pause.fill" : "play.fill", big: true) { c.togglePlay() }
+                control("goforward.\(AppSettings.shared.skipForward)", big: false) { c.skip(Double(AppSettings.shared.skipForward)) }
+            }
+            Spacer()
+            GeometryReader { g in
+                Color.clear.contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .updating($dragging) { _, state, _ in state = true }
+                            .onChanged { v in c.scrub(to: c.duration * Double(max(0, min(1, v.location.x / max(1, g.size.width))))) }
+                            .onEnded { _ in c.commitScrub() }
+                    )
+            }
+            .frame(height: 140.s + 24)
+        }
+        .padding(.horizontal, 90.s)
+        .padding(.bottom, 20.s)
+        .foregroundStyle(.white)
+    }
+
+    private func open(_ p: PlayerController.Panel) {
+        c.panel = p
+        c.showOverlay(autoHide: false)
+    }
+
+    private func control(_ symbol: String, big: Bool? = nil, action: @escaping () -> Void) -> some View {
+        let size: CGFloat = big == true ? 72 : big == false ? 52 : 40
+        return Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: size * 0.45, weight: .semibold))
+                .frame(width: size, height: size)
+                .backgcontrol(.black.opacity(0.35), in: Circle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+#endif
+
+#if os(iOS)
+/// AirPlay and AirPods output picker.
+struct RoutePicker: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let v = AVRoutePickerView()
+        v.tintColor = .white
+        v.prioritizesVideoDevices = true
+        return v
+    }
+    func updateUIView(_ view: AVRoutePickerView, context: Context) {}
+}
+#endif
 
 struct SkipButton: View {
     let title: String
@@ -176,7 +327,7 @@ struct SkipButton: View {
             Text(detail).font(.caption).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 34).padding(.vertical, 18)
-        .background(.regularMaterial, in: Capsule())
+        .backgcontrol(.regularMaterial, in: Capsule())
         .overlay(Capsule().stroke(.white.opacity(0.8), lineWidth: 2))
     }
 }
@@ -197,6 +348,6 @@ struct UpNextCard: View {
             .frame(width: 380, alignment: .leading)
         }
         .padding(24)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .backgcontrol(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
     }
 }

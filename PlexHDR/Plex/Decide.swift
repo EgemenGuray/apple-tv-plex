@@ -163,7 +163,7 @@ enum Decide {
         var note: String
         if let audio {
             let channels = audio.channels >= 8 ? "7.1" : audio.channels >= 6 ? "5.1" : audio.channels == 2 ? "stereo" : "\(audio.channels) ch"
-            note = "Original file, decoded on the Apple TV. \(audioLabel(audio)) plays as \(channels) PCM"
+            note = "Original file, decoded on \(Platform.deviceNoun). \(audioLabel(audio)) plays as \(channels) PCM"
             note += audio.channels > 2 ? " (Spatial Audio on AirPods)." : "."
             if isAtmos(audio) && audio.codec == "eac3" {
                 if ["mp4", "m4v", "mov"].contains(container) && settings.appleDecoderForAtmos {
@@ -179,21 +179,44 @@ enum Decide {
                 note += " Atmos height objects are folded into the 7.1 mix."
             }
         } else {
-            note = "Original file, decoded on the Apple TV."
+            note = "Original file, decoded on \(Platform.deviceNoun)."
         }
-        if is8K(media) {
+        if !Platform.hasFFmpeg {
+            (engine, note) = appleOnlyPlan(container: container, video: video, audio: audio)
+            if let s = subtitle, isImageSub(s) {
+                warnings.append("Image subtitles (PGS/VobSub) can't be drawn on this device; pick a text subtitle or search online.")
+            }
+        }
+        if is8K(media), Platform.isTV {
             warnings.append("Apple TV outputs at most 4K, so this 8K file is scaled to 4K. Use the TV's own Plex HDR app for 8K.")
         }
         if let video, video.doviPresent, video.doviProfile == 5 {
             warnings.append("Dolby Vision profile 5 has no HDR10 layer; the player converts it to HDR10.")
         }
-        if engine != .ffmpeg, let s = subtitle, isImageSub(s) {
+        if Platform.hasFFmpeg, engine != .ffmpeg, let s = subtitle, isImageSub(s) {
             // AVPlayer can't draw PGS from an MKV remux; keep the app's player so the subtitle shows.
             engine = .ffmpeg
             warnings.append("Image subtitles need the app's player, so Atmos objects are folded into 7.1 for this title.")
         }
         return Plan(media: media, mediaIndex: mediaIndex, part: part, video: video, audio: audio, subtitle: subtitle,
                     engine: engine, note: note, warnings: warnings)
+    }
+
+    /// iPhone and iPad play everything through AVPlayer: MP4/MOV with codecs it decodes open directly; anything else
+    /// is repackaged by the server as HLS (video copied, audio copied when it's Dolby Digital (Plus) or AAC, otherwise
+    /// converted to Dolby Digital Plus).
+    private static func appleOnlyPlan(container: String, video: PlexStream?, audio: PlexStream?) -> (Engine, String) {
+        let appleVideo = ["hevc", "h265", "h264", "avc1", "hvc1", "dvhe", "dvh1"].contains(video?.codec.lowercased() ?? "h264")
+        let appleAudio = ["aac", "ac3", "eac3", "alac", "mp3", "flac", "opus"].contains(audio?.codec.lowercased() ?? "aac")
+        let atmos = audio.map { isAtmos($0) } == true && audio?.codec == "eac3"
+        let spatial = (audio?.channels ?? 2) > 2 ? " Multichannel audio plays as Spatial Audio on AirPods." : ""
+        if ["mp4", "m4v", "mov"].contains(container) && appleVideo && appleAudio {
+            return (.apple, (atmos ? "Original file with Dolby Atmos through Apple's decoder." : "Original file, played by Apple's player.") + spatial)
+        }
+        let audioNote = appleAudio && audio?.codec.lowercased() != "flac" && audio?.codec.lowercased() != "opus"
+            ? (atmos ? "Dolby Atmos is kept." : "audio is kept as is.")
+            : "\(audio.map { audioLabel($0) } ?? "The audio") is converted to Dolby Digital Plus by the server."
+        return (.appleRemux, "The server repackages the file as HLS for Apple's player (video not re-encoded); \(audioNote)\(spatial)")
     }
 
     /// Apple TV-style badges for the details page.

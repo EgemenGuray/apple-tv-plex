@@ -1,6 +1,8 @@
 import AVFoundation
 import Combine
+#if KSPLAYER
 import KSPlayer
+#endif
 import SwiftUI
 
 /// KSPlayer options with the app's track choices and display matching.
@@ -30,7 +32,11 @@ final class PlayerController: ObservableObject {
     enum Fit: String, CaseIterable, Identifiable { case fit, fill, stretch
         var id: String { rawValue }
         var label: String { ["fit": "Original", "fill": "Zoom to fill", "stretch": "Stretch"][rawValue]! }
+        #if os(macOS)
+        var mode: UIViewContentMode { [.fit: .scaleAspectFit, .fill: .scaleAspectFill, .stretch: .scaleToFill][self]! }
+        #else
         var mode: UIView.ContentMode { [.fit: .scaleAspectFit, .fill: .scaleAspectFill, .stretch: .scaleToFill][self]! }
+        #endif
     }
 
     @Published private(set) var item: PlexItem
@@ -110,7 +116,7 @@ final class PlayerController: ObservableObject {
             transcodeSession = session
             remuxOffset = start
             // The server starts the stream at the offset, so the player starts at 0.
-            return (pc.remuxURL(item, mediaIndex: plan.mediaIndex, offset: start, session: session), 0)
+            return (pc.remuxURL(item, mediaIndex: plan.mediaIndex, offset: start, session: session, h264Only: remuxH264), 0)
         }
         return (plan.part.flatMap(pc.directPlayURL), start)
     }
@@ -163,6 +169,8 @@ final class PlayerController: ObservableObject {
         checkMarkers()
     }
     private var remuxOffset: TimeInterval = 0
+    /// Last resort on iPhone/iPad when AVPlayer refuses the server's HEVC stream.
+    private var remuxH264 = false
 
     private func finished(_ err: Error?) {
         if let err {
@@ -177,8 +185,24 @@ final class PlayerController: ObservableObject {
                 }
                 return
             }
+            // Without the FFmpeg player (iPhone, iPad), a file AVPlayer can't open directly goes through the server.
+            if !Platform.hasFFmpeg, plan.engine == .apple {
+                openRetries = 0
+                plan.engine = .appleRemux
+                plan.note = "AVPlayer couldn't open the file directly; the server repackages it as HLS."
+                open(at: time)
+                return
+            }
+            if !Platform.hasFFmpeg, plan.engine == .appleRemux, !remuxH264 {
+                openRetries = 0
+                remuxH264 = true
+                plan.note = "AVPlayer refused the server's HEVC stream; the server converts the video to H.264 (SDR) instead."
+                if let s = transcodeSession { Task { await PlexClient.shared.stopTranscode(s) } }
+                open(at: time)
+                return
+            }
             // If Apple's player still can't open it, fall back to the app's own player.
-            if plan.engine != .ffmpeg {
+            if Platform.hasFFmpeg, plan.engine != .ffmpeg {
                 openRetries = 0
                 plan.engine = .ffmpeg
                 plan.note = "Apple's player couldn't open this file; playing it with the app's player."
@@ -202,7 +226,8 @@ final class PlayerController: ObservableObject {
     private func applyTracksAfterOpen() {
         guard !appliedSubtitle, let layer else { return }
         appliedSubtitle = true
-        if let a = plan.audio, plan.engine == .ffmpeg { selectAudioTrack(a, in: layer) }
+        // KSPlayer's AVPlayer engine opens the wanted track itself; the AVPlayer-only build picks it here.
+        if let a = plan.audio, plan.engine == .ffmpeg || (!Platform.hasFFmpeg && plan.engine == .apple) { selectAudioTrack(a, in: layer) }
         if let online = selectedOnlineSubtitle, let url = Online.shared.cachedSubtitle(online) {
             addAndSelect(URLSubtitleInfo(subtitleID: "online-\(online)", name: "Downloaded", url: url, languageCode: nil))
         } else if let s = plan.subtitle {
@@ -241,7 +266,7 @@ final class PlayerController: ObservableObject {
         if let pid = plan.part?.id { Task { await PlexClient.shared.selectStreams(partId: pid, audio: nil, subtitle: s?.id ?? 0) } }
         guard let layer else { return }
         guard let s else { layer.select(subtitleInfo: nil); return }
-        if !s.isExternal, let idx = s.index {
+        if Platform.hasFFmpeg, !s.isExternal, let idx = s.index {
             let infos = layer.subtitleModel.subtitleInfos.filter { !($0 is URLSubtitleInfo) }
             let embedded = (plan.part?.subtitleStreams ?? []).filter { !$0.isExternal }
             let info = infos.first { $0.subtitleID == String(idx) }
@@ -249,7 +274,12 @@ final class PlayerController: ObservableObject {
             layer.select(subtitleInfo: info)
             return
         }
-        guard let url = PlexClient.shared.subtitleURL(s) else { return }
+        // External files, and on iPhone/iPad embedded text tracks too, come from the server as files.
+        guard let url = PlexClient.shared.subtitleURL(s) ?? PlexClient.shared.streamFileURL(s) else { return }
+        if !Platform.hasFFmpeg, Decide.isImageSub(s) {
+            error = "Image subtitles (PGS/VobSub) can't be shown on this device. Search online in Subtitles for a text version."
+            return
+        }
         do {
             let local = try await downloadPlexSubtitle(url, stream: s)
             addAndSelect(URLSubtitleInfo(subtitleID: "plex-\(s.id)", name: s.extendedDisplayTitle, url: local, languageCode: s.languageCode))
@@ -298,12 +328,15 @@ final class PlayerController: ObservableObject {
         layer?.player.playbackRate = r
     }
 
+    #if KSPLAYER
     /// KSPlayer's own defaults, scaled by the size and position settings.
     private static let baseFontSize = KSOptions.subtitleFontSize
     private static let baseMargin = KSOptions.textPosition.verticalMargin
+    #endif
 
-    /// Subtitle look from Settings, applied to KSPlayer's renderer.
+    /// Subtitle look from Settings, applied to KSPlayer's renderer. (The AVPlayer build reads Settings as it draws.)
     func applySubtitleStyle() {
+        #if KSPLAYER
         let s = settings
         KSOptions.subtitleFontSize = Self.baseFontSize * s.subtitleSize
         KSOptions.textColor = s.subtitleColor.color
@@ -321,6 +354,7 @@ final class PlayerController: ObservableObject {
         var pos = KSOptions.textPosition
         pos.verticalMargin = max(Self.baseMargin, 10) * CGFloat(s.subtitleBottomMargin / 0.06)
         KSOptions.textPosition = pos
+        #endif
     }
 
     // MARK: - Transport
@@ -367,6 +401,12 @@ final class PlayerController: ObservableObject {
     }
 
     func cancelScrub() { scrubTime = nil }
+
+    /// Touch and mouse: dragging the timeline moves the scrub head to a point.
+    func scrub(to t: TimeInterval) {
+        scrubTime = max(0, min(duration, t))
+        showOverlay(autoHide: false)
+    }
 
     func jumpChapter(_ d: Int) {
         let chapters = self.chapters
@@ -471,7 +511,7 @@ final class PlayerController: ObservableObject {
         }
         plan = p
         upNext = nil; upNextDismissed = false; nextEpisode = nil; nextLoaded = false
-        introMarker = nil; introSkipped = []; bif = nil; time = 0; remuxOffset = 0
+        introMarker = nil; introSkipped = []; bif = nil; time = 0; remuxOffset = 0; remuxH264 = false
         duration = Double(next.durationMs ?? 0) / 1000
         selectedOnlineSubtitle = nil
         open(at: TitleMemory.shared.resumePosition(next))
