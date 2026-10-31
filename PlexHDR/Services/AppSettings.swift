@@ -59,9 +59,11 @@ final class AppSettings: ObservableObject {
     @Published var openSubtitlesPassword: String { didSet { d.set(openSubtitlesPassword, forKey: "openSubtitlesPassword") } }
 
     private init() {
-        func s(_ k: String, _ def: String) -> String { d.string(forKey: k) ?? def }
-        func b(_ k: String, _ def: Bool) -> Bool { d.object(forKey: k) == nil ? def : d.bool(forKey: k) }
-        func n(_ k: String, _ def: Double) -> Double { d.object(forKey: k) == nil ? def : d.double(forKey: k) }
+        // Reads go through a local reference: nested functions can't touch `self` before every property is set.
+        let ud = UserDefaults.standard
+        func s(_ k: String, _ def: String) -> String { ud.string(forKey: k) ?? def }
+        func b(_ k: String, _ def: Bool) -> Bool { ud.object(forKey: k) == nil ? def : ud.bool(forKey: k) }
+        func n(_ k: String, _ def: Double) -> Double { ud.object(forKey: k) == nil ? def : ud.double(forKey: k) }
         audioLanguage = s("audioLanguage", "")
         audioPreference = AudioPreference(rawValue: s("audioPreference", "")) ?? .best
         appleDecoderForAtmos = b("appleDecoderForAtmos", true)
