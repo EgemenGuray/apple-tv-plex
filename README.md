@@ -156,8 +156,7 @@ For a soundbar or receiver, set **Audio Format → Change Format** to Dolby Atmo
 | `.github/workflows/build.yml` | Builds the app on a GitHub macOS runner on every push |
 
 ## What has and hasn't been checked
-- Written without a Mac: the Swift code has not been compiled locally. The GitHub Actions workflow builds it for tvOS
-  on every push; check the Actions tab for the result.
+- Builds cleanly for tvOS with Xcode 26.3 (GitHub Actions, unsigned device build, on every push).
 - **Not yet run on an Apple TV.** Things to check on the first run:
   1. That KSPlayer's audio track ids match Plex's stream indexes (the app also falls back to track order).
   2. That embedded subtitle tracks map the same way.
