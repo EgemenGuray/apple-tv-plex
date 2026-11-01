@@ -6,10 +6,11 @@ import SwiftUI
 /// The IPTV sections. With Plex they sit under one "Live TV" tab with a section bar; in IPTV-only mode each one
 /// is its own tab.
 enum IPTVSection: String, CaseIterable, Identifiable {
-    case live, guide, movies, series, favorites, search, downloads, recordings, playlists
+    case home, live, guide, movies, series, favorites, search, downloads, recordings, playlists
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .home: return "Home"
         case .live: return "Live TV"
         case .guide: return "TV Guide"
         case .movies: return "Movies"
@@ -23,6 +24,7 @@ enum IPTVSection: String, CaseIterable, Identifiable {
     }
     var symbol: String {
         switch self {
+        case .home: return "house"
         case .live: return "tv"
         case .guide: return "calendar"
         case .movies: return "film"
@@ -54,7 +56,7 @@ extension View {
 
 /// One tab holding every IPTV section behind a section bar.
 struct IPTVHome: View {
-    @AppStorage("iptv.section") private var sectionRaw = IPTVSection.live.rawValue
+    @AppStorage("iptv.section") private var sectionRaw = IPTVSection.home.rawValue
     @ObservedObject private var store = IPTVStore.shared
 
     private var section: IPTVSection { IPTVSection(rawValue: sectionRaw) ?? .live }
@@ -94,6 +96,7 @@ struct IPTVSectionView: View {
                 IPTVWelcome()
             } else {
                 switch section {
+                case .home: IPTVHomeFeed()
                 case .live: LiveTVView()
                 case .guide: GuideView()
                 case .movies: MoviesView()
@@ -129,7 +132,7 @@ struct IPTVWelcome: View {
 
 /// IPTV without Plex: every section is a tab.
 struct IPTVOnlyTabs: View {
-    @State private var tab = IPTVSection.live.rawValue
+    @State private var tab = IPTVSection.home.rawValue
     var body: some View {
         TabView(selection: $tab) {
             ForEach(IPTVSection.allCases) { s in

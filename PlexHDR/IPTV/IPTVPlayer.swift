@@ -100,10 +100,19 @@ final class IPTVPlayerController: ObservableObject {
     // MARK: - Opening
 
     func start() {
+        noteWatching()
         var at: TimeInterval = 0
         if let id = resumeID { at = store.position(id) ?? 0 }
         open(at: at)
         hideSoon()
+    }
+
+    private func noteWatching() {
+        switch kind {
+        case let .movie(m): store.noteWatching(movie: m)
+        case let .episode(s, e, _): store.noteWatching(series: s, episode: e)
+        default: break
+        }
     }
 
     private func streamURL() -> (String?, String?) {
@@ -189,6 +198,7 @@ final class IPTVPlayerController: ObservableObject {
         if let id = resumeID { store.savePosition(id, duration, duration: duration) }
         if case let .episode(s, e, all) = kind, let i = all.firstIndex(of: e), let next = all[safe: i + 1] {
             kind = .episode(s, next, all)
+            noteWatching()
             time = 0
             open(at: store.position(next.id) ?? 0)
             showOverlay(autoHide: true)

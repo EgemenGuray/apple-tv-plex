@@ -41,6 +41,10 @@ final class IPTVStore: ObservableObject {
     @Published private(set) var measured: [String: IPTVMeasured] = [:]
     private var nameTags: [String: Set<IPTVTag>] = [:]
     private var positions: [String: [Double]] = [:]
+    /// What was being watched, for Continue Watching.
+    @Published private(set) var resumeEntries: [IPTVResume] = []
+    /// When each channel was tuned, for Trending Channels.
+    private var plays: [String: [Double]] = [:]
     private var details: [String: IPTVDetails] = [:]
     private var epg: [String: [IPTVProgramme]] = [:]
     private var epgNames: [String: String] = [:]
@@ -61,6 +65,8 @@ final class IPTVStore: ObservableObject {
         pin = d.string(forKey: "iptv.pin") ?? ""
         positions = (d.dictionary(forKey: "iptv.positions") as? [String: [Double]]) ?? [:]
         measured = decode([String: IPTVMeasured].self, "iptv.measured") ?? [:]
+        resumeEntries = decode([IPTVResume].self, "iptv.resume") ?? []
+        plays = (d.dictionary(forKey: "iptv.plays") as? [String: [Double]]) ?? [:]
         for p in playlists { if let c = readCache(p.id) { contents[p.id] = c } }
         rebuild()
         if let g = readGuideCache() {
@@ -333,6 +339,20 @@ final class IPTVStore: ObservableObject {
         recents.insert(ch.id, at: 0)
         if recents.count > 30 { recents.removeLast(recents.count - 30) }
         d.set(recents, forKey: "iptv.recents")
+        let weekAgo = Date().addingTimeInterval(-14 * 86400).timeIntervalSince1970
+        plays[ch.id, default: []].append(Date().timeIntervalSince1970)
+        for (k, v) in plays { let kept = v.filter { $0 > weekAgo }; plays[k] = kept.isEmpty ? nil : kept }
+        d.set(plays, forKey: "iptv.plays")
+    }
+
+    /// Channels you tuned most in the last week.
+    var trendingChannels: [IPTVChannel] {
+        let since = Date().addingTimeInterval(-7 * 86400).timeIntervalSince1970
+        return plays.map { ($0.key, $0.value.filter { $0 > since }.count) }
+            .filter { $0.1 > 0 }
+            .sorted { $0.1 > $1.1 }
+            .compactMap { channelByID[$0.0] }
+            .prefix(20).map { $0 }
     }
 
     func clearRecents() {
@@ -385,11 +405,96 @@ final class IPTVStore: ObservableObject {
         guard duration > 0 else { return }
         if t < 30 || t > duration * 0.95 { positions[id] = nil } else { positions[id] = [t, duration] }
         d.set(positions, forKey: "iptv.positions")
+        if let i = resumeEntries.firstIndex(where: { $0.id == id }) {
+            if positions[id] == nil { resumeEntries.remove(at: i) } else { resumeEntries[i].updated = Date() }
+            encode(resumeEntries, "iptv.resume")
+        }
     }
 
-    /// Films and episodes with a resume point, most recent sources first.
+    /// Films with a resume point.
     var continueWatching: [IPTVMovie] {
         movies.filter { positions[$0.id] != nil }
+    }
+
+    /// Records what is playing so Continue Watching can offer it again (films and episodes).
+    func noteWatching(movie m: IPTVMovie) {
+        upsertResume(IPTVResume(id: m.id, movieID: m.id, seriesID: nil, episode: nil, title: m.name, subtitle: m.year.map(String.init), poster: m.poster, updated: Date()))
+    }
+
+    func noteWatching(series s: IPTVSeries, episode e: IPTVEpisode) {
+        // One entry per series: the latest episode replaces the earlier one.
+        resumeEntries.removeAll { $0.seriesID == s.id && $0.id != e.id }
+        upsertResume(IPTVResume(id: e.id, movieID: nil, seriesID: s.id, episode: e, title: s.name, subtitle: "\(e.label) · \(e.title)", poster: e.thumb ?? s.poster, updated: Date()))
+    }
+
+    private func upsertResume(_ r: IPTVResume) {
+        resumeEntries.removeAll { $0.id == r.id }
+        resumeEntries.insert(r, at: 0)
+        if resumeEntries.count > 40 { resumeEntries.removeLast(resumeEntries.count - 40) }
+        encode(resumeEntries, "iptv.resume")
+    }
+
+    func removeResume(_ id: String) {
+        resumeEntries.removeAll { $0.id == id }
+        positions[id] = nil
+        d.set(positions, forKey: "iptv.positions")
+        encode(resumeEntries, "iptv.resume")
+    }
+
+    /// Continue Watching rows that still exist in the enabled sources.
+    var continueEntries: [IPTVResume] {
+        let movieIDs = Set(movies.map(\.id))
+        let seriesIDs = Set(series.map(\.id))
+        return resumeEntries.filter { e in
+            if let m = e.movieID { return movieIDs.contains(m) && positions[e.id] != nil }
+            if let s = e.seriesID { return seriesIDs.contains(s) }
+            return false
+        }
+    }
+
+    func movie(_ id: String) -> IPTVMovie? { movies.first { $0.id == id } }
+    func seriesItem(_ id: String) -> IPTVSeries? { series.first { $0.id == id } }
+
+    // MARK: - Trending
+
+    @Published private(set) var trendingMovies: [IPTVMovie] = []
+    @Published private(set) var trendingSeries: [IPTVSeries] = []
+    @Published private(set) var trendingFromTMDB = false
+    private var trendingLoaded: Date?
+
+    /// Films and series trending on TMDB this week that your sources have. Without a TMDB key: the best rated of
+    /// the newest additions.
+    func loadTrending(force: Bool = false) async {
+        if !force, let t = trendingLoaded, Date().timeIntervalSince(t) < 3600, !trendingMovies.isEmpty || !trendingSeries.isEmpty { return }
+        trendingLoaded = Date()
+        async let tm = Online.shared.trending("movie")
+        async let ts = Online.shared.trending("tv")
+        let (tmdbMovies, tmdbSeries) = await (tm, ts)
+        func match<T>(_ list: [T], _ name: (T) -> String, _ year: (T) -> Int?, _ wanted: [(title: String, year: Int?)]) -> [T] {
+            var index: [String: [T]] = [:]
+            for x in list { index[IPTVStore.cleanTitle(name(x)), default: []].append(x) }
+            var out: [T] = []
+            for w in wanted {
+                guard let c = index[IPTVStore.cleanTitle(w.title)], !c.isEmpty else { continue }
+                out.append(c.first { year($0) == w.year } ?? c[0])
+            }
+            return out
+        }
+        let m = match(movies, { $0.name }, { $0.year }, tmdbMovies)
+        let s = match(series, { $0.name }, { $0.year }, tmdbSeries)
+        trendingFromTMDB = !m.isEmpty || !s.isEmpty
+        trendingMovies = m.isEmpty ? Array(movies.sorted { ($0.added ?? .distantPast) > ($1.added ?? .distantPast) }.prefix(300)
+            .sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }.prefix(20)) : m
+        trendingSeries = s.isEmpty ? Array(series.sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }.prefix(20)) : s
+    }
+
+    /// "EN - The Bear (2022) [4K]" → "thebear": drops language prefixes, years and tags.
+    static func cleanTitle(_ raw: String) -> String {
+        var s = raw
+        for p in [#"^\s*[\|\[]?[A-Z]{2,3}[\|\]]?\s*[-:|]\s*"#, #"^\s*\|[^|]+\|\s*"#, #"[\(\[][^\)\]]*[\)\]]"#, #"\b(19|20)\d{2}\b"#] {
+            s = s.replacingOccurrences(of: p, with: " ", options: .regularExpression)
+        }
+        return s.iptvKey
     }
 
     // MARK: - Film and series details

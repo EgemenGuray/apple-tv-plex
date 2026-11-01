@@ -4,10 +4,13 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var plex: PlexClient
     @EnvironmentObject private var presenter: PlayerPresenter
+    @ObservedObject private var iptv = IPTVStore.shared
 
     var body: some View {
         Group {
-            if plex.token == nil {
+            if plex.token == nil && iptv.iptvOnly {
+                IPTVOnlyTabs()
+            } else if plex.token == nil {
                 SignInView()
             } else if plex.server == nil {
                 ServerPickerView()
@@ -16,6 +19,7 @@ struct RootView: View {
             }
         }
         .playerPresentation(presenter)
+        .iptvPresentation(IPTVPlayerPresenter.shared, store: iptv)
     }
 }
 
@@ -49,6 +53,8 @@ struct MainTabs: View {
         TabView(selection: $tab) {
             NavigationStack { HomeView().withRoutes() }
                 .tabItem { Text("Home") }.tag("home")
+            IPTVHome()
+                .tabItem { Text("Live TV") }.tag("iptv")
             ForEach(sections.filter(\.isVideo)) { s in
                 NavigationStack { LibraryView(section: s).withRoutes() }
                     .tabItem { Text(s.title) }.tag("lib-\(s.id)")
@@ -109,6 +115,8 @@ struct SignInView: View {
             } else {
                 ProgressView()
             }
+            Button("Use only Live TV (IPTV) without Plex") { IPTVStore.shared.iptvOnly = true }
+                .font(.callout)
         }
         .padding()
         .task { await start() }

@@ -174,6 +174,18 @@ struct IPTVGroup: Identifiable, Hashable {
     static func key(_ p: UUID, _ k: Kind, _ n: String) -> String { "\(p.uuidString)|\(k.rawValue)|\(n)" }
 }
 
+/// A film or episode left part-way, for Continue Watching.
+struct IPTVResume: Codable, Hashable, Identifiable {
+    var id: String
+    var movieID: String?
+    var seriesID: String?
+    var episode: IPTVEpisode?
+    var title: String
+    var subtitle: String?
+    var poster: String?
+    var updated: Date
+}
+
 /// A reminder for an upcoming programme.
 struct IPTVReminder: Codable, Hashable, Identifiable {
     var channelID: String
