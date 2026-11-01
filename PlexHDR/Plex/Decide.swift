@@ -188,7 +188,7 @@ enum Decide {
             }
         }
         if is8K(media), Platform.isTV {
-            warnings.append("Apple TV outputs at most 4K, so this 8K file is scaled to 4K. Use the TV's own Plex HDR app for 8K.")
+            warnings.append("Apple TV outputs at most 4K, so this 8K file is scaled to 4K. Use Lumen on the TV for 8K.")
         }
         if let video, video.doviPresent, video.doviProfile == 5 {
             warnings.append("Dolby Vision profile 5 has no HDR10 layer; the player converts it to HDR10.")

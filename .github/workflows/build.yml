@@ -15,13 +15,13 @@ jobs:
       matrix:
         include:
           - name: Apple TV
-            scheme: PlexHDR
+            scheme: Lumen
             destination: generic/platform=tvOS
           - name: iPhone and iPad
-            scheme: PlexHDR-iOS
+            scheme: Lumen-iOS
             destination: generic/platform=iOS
           - name: Mac
-            scheme: PlexHDR-macOS
+            scheme: Lumen-macOS
             destination: generic/platform=macOS
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
       - name: Build ${{ matrix.name }} (unsigned)
         run: |
           set -o pipefail
-          xcodebuild -project PlexHDR.xcodeproj -scheme "${{ matrix.scheme }}" \
+          xcodebuild -project Lumen.xcodeproj -scheme "${{ matrix.scheme }}" \
             -destination '${{ matrix.destination }}' \
             -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error:|warning: .*(PlexHDR/)|BUILD (SUCCEEDED|FAILED)|\*\*" | head -300
