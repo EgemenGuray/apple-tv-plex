@@ -17,6 +17,7 @@ enum KSPlayerState {
 protocol MediaPlayerTrack: AnyObject {
     var trackID: Int32 { get }
     var isEnabled: Bool { get }
+    var name: String { get }
 }
 
 protocol SubtitleInfo: AnyObject {
@@ -44,6 +45,9 @@ class KSOptions {
     var isAccurateSeek = true
     var registerRemoteControll = true
     var playerTypes: [Any.Type] = []
+    /// Sent as the HTTP User-Agent (IPTV providers often require a specific one).
+    var userAgent: String?
+    var isLive: Bool?
     init() {}
     func wantedAudio(tracks: [any MediaPlayerTrack]) -> (any MediaPlayerTrack)? { nil }
     @MainActor func updateVideo(refreshRate: Float, isDovi: Bool, formatDescription: CMFormatDescription) {}
@@ -170,6 +174,7 @@ final class AVAudioOptionTrack: MediaPlayerTrack {
     let option: AVMediaSelectionOption
     let trackID: Int32
     var isEnabled: Bool
+    var name: String { option.displayName }
     init(option: AVMediaSelectionOption, order: Int, selected: Bool) {
         self.option = option
         // Never equal to a Plex stream index, so tracks are matched by order.
@@ -208,6 +213,11 @@ final class AVPlayerEngine {
     }
 
     var chapters: [PlayerChapter] { [] }
+
+    var isMuted: Bool {
+        get { avPlayer.isMuted }
+        set { avPlayer.isMuted = newValue }
+    }
 
     func tracks(mediaType: AVMediaType) -> [any MediaPlayerTrack] {
         guard mediaType == .audio, let group = audioGroup, let item = avPlayer.currentItem else { return [] }
@@ -353,9 +363,14 @@ final class KSPlayerLayer {
         player.audioGroup = nil
         delegate?.player(layer: self, state: .preparing)
 
-        let item = AVPlayerItem(url: url)
-        // Plex streams are long; let AVPlayer buffer ahead generously.
-        item.preferredForwardBufferDuration = 30
+        let item: AVPlayerItem
+        if let ua = options.userAgent, !ua.isEmpty {
+            item = AVPlayerItem(asset: AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": ua]]))
+        } else {
+            item = AVPlayerItem(url: url)
+        }
+        // Plex streams are long; let AVPlayer buffer ahead generously. Live TV starts sooner with less.
+        item.preferredForwardBufferDuration = options.isLive == true ? 4 : 30
         itemObserver = item.observe(\.status, options: [.new]) { [weak self] it, _ in
             let status = it.status
             let err = it.error
