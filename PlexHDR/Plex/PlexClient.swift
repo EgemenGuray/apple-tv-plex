@@ -21,7 +21,7 @@ enum PlexError: LocalizedError {
 final class PlexClient: ObservableObject {
     static let shared = PlexClient()
 
-    static let product = "Plex HDR (\(Platform.plexPlatform))"
+    static let product = "Lumen (\(Platform.plexPlatform))"
     static let version = "0.1.0"
 
     @Published private(set) var token: String?

@@ -1,4 +1,6 @@
-# Plex HDR for Apple TV
+# Lumen for Apple TV, Mac, iPhone and iPad
+
+> Formerly "Plex HDR". The source folder is still `PlexHDR/` and the bundle id is still `com.egemenguray.plexhdr`, so existing installs update in place and keep their sign-in and settings.
 
 A Plex client for Apple TV 4K, built the way Infuse works: it plays the original file with its own FFmpeg-based
 player, so MKV remuxes open as they are, nothing is converted on the server, and every audio track (TrueHD, DTS-HD MA,
@@ -15,7 +17,7 @@ commit in `project.yml` because its core ships as a binary framework.
 
 The same app builds for four devices from one codebase (three Xcode targets):
 
-| | Apple TV (`PlexHDR`) | Mac (`PlexHDR-macOS`) | iPhone and iPad (`PlexHDR-iOS`) |
+| | Apple TV (`Lumen`) | Mac (`Lumen-macOS`) | iPhone and iPad (`Lumen-iOS`) |
 |---|---|---|---|
 | Player | KSPlayer (FFmpeg), AVPlayer for DD+ Atmos | KSPlayer (FFmpeg), AVPlayer for DD+ Atmos | AVPlayer |
 | MKV | Opened directly | Opened directly | Repackaged by the Plex server as HLS (video and Atmos copied, not re-encoded) |
@@ -147,9 +149,9 @@ sites change their layout.
 You need a Mac with **Xcode 26** or newer and an Apple ID.
 
 1. On the Mac: `./scripts/setup.sh` (installs [XcodeGen](https://github.com/yonaskolb/XcodeGen) with Homebrew if
-   needed, generates `PlexHDR.xcodeproj` and opens it). Xcode then downloads KSPlayer and FFmpegKit, which takes a few
+   needed, generates `Lumen.xcodeproj` and opens it). Xcode then downloads KSPlayer and FFmpegKit, which takes a few
    minutes the first time.
-2. In Xcode: select the **PlexHDR** target → **Signing & Capabilities** → choose your Team (your Apple ID works).
+2. In Xcode: select the **Lumen** target → **Signing & Capabilities** → choose your Team (your Apple ID works).
    If the bundle id is taken, change `com.egemenguray.plexhdr` to something unique.
 3. Pair the Apple TV: on the Apple TV open **Settings → Remotes and Devices → Remote App and Devices**. In Xcode open
    **Window → Devices and Simulators**, pick the Apple TV and enter the code it shows. Mac and Apple TV must be on the
@@ -166,7 +168,7 @@ For a soundbar or receiver, set **Audio Format → Change Format** to Dolby Atmo
 
 ## Install on a Mac, iPhone or iPad
 
-Same `./scripts/setup.sh`, then in Xcode pick the **PlexHDR-macOS** scheme and **My Mac**, or **PlexHDR-iOS** and your
+Same `./scripts/setup.sh`, then in Xcode pick the **Lumen-macOS** scheme and **My Mac**, or **Lumen-iOS** and your
 iPhone/iPad (connected by cable or on the same network, with Developer Mode on: Settings → Privacy & Security). Set
 your Team under Signing & Capabilities for that target and press Run. The 7-day limit of a free Apple ID applies to
 iPhone and iPad too; the Mac build runs without one.

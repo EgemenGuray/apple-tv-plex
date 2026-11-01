@@ -10,7 +10,7 @@ final class Online {
     private let tmdbBase = "https://api.themoviedb.org/3"
     private let tmdbImages = "https://image.tmdb.org/t/p/"
     private let osBase = "https://api.opensubtitles.com/api/v1"
-    private let appUA = "PlexHDR-tvOS v0.1"
+    private let appUA = "Lumen-tvOS v0.1"
     private var settings: AppSettings { .shared }
     private let session = URLSession(configuration: .default)
     private let defaults = UserDefaults.standard

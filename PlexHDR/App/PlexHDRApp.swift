@@ -5,7 +5,7 @@ import KSPlayer
 import SwiftUI
 
 @main
-struct PlexHDRApp: App {
+struct LumenApp: App {
     @Environment(\.scenePhase) private var phase
 
     init() {

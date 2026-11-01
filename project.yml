@@ -1,4 +1,4 @@
-name: PlexHDR
+name: Lumen
 options:
   bundleIdPrefix: com.egemenguray
   deploymentTarget:
@@ -19,7 +19,7 @@ packages:
 
 targets:
   # Apple TV: KSPlayer (FFmpeg) plays everything; AVPlayer for Dolby Atmos.
-  PlexHDR:
+  Lumen:
     type: application
     platform: tvOS
     sources:
@@ -33,12 +33,12 @@ targets:
     info:
       path: PlexHDR/Info.plist
       properties:
-        CFBundleDisplayName: Plex HDR
+        CFBundleDisplayName: Lumen
         CFBundleShortVersionString: "0.2.0"
         CFBundleVersion: "2"
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-        NSLocalNetworkUsageDescription: Plex HDR connects to your Plex Media Server on the local network.
+        NSLocalNetworkUsageDescription: Lumen connects to your Plex Media Server on the local network.
         NSBonjourServices: [_plexmediasvr._tcp]
         UILaunchScreen: {}
         UIRequiredDeviceCapabilities: [arm64]
@@ -46,15 +46,15 @@ targets:
         UIBackgroundModes: [audio]
     settings:
       base:
-        PRODUCT_NAME: PlexHDR
-        PRODUCT_BUNDLE_IDENTIFIER: com.egemenguray.plexhdr
+        PRODUCT_NAME: Lumen
+        PRODUCT_BUNDLE_IDENTIFIER: com.egemenguray.plexhdr   # kept so existing installs update in place
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         TARGETED_DEVICE_FAMILY: "3"
         ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) KSPLAYER
 
   # iPhone and iPad: AVPlayer, with the Plex server repackaging MKV as HLS.
-  PlexHDR-iOS:
+  Lumen-iOS:
     type: application
     platform: iOS
     sources:
@@ -65,12 +65,12 @@ targets:
     info:
       path: Support/iOS/Info.plist
       properties:
-        CFBundleDisplayName: Plex HDR
+        CFBundleDisplayName: Lumen
         CFBundleShortVersionString: "0.2.0"
         CFBundleVersion: "2"
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-        NSLocalNetworkUsageDescription: Plex HDR connects to your Plex Media Server on the local network.
+        NSLocalNetworkUsageDescription: Lumen connects to your Plex Media Server on the local network.
         NSBonjourServices: [_plexmediasvr._tcp]
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
@@ -80,14 +80,14 @@ targets:
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
     settings:
       base:
-        PRODUCT_NAME: PlexHDR
-        PRODUCT_BUNDLE_IDENTIFIER: com.egemenguray.plexhdr
+        PRODUCT_NAME: Lumen
+        PRODUCT_BUNDLE_IDENTIFIER: com.egemenguray.plexhdr   # kept so existing installs update in place
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
   # Mac: KSPlayer (FFmpeg) as on Apple TV.
-  PlexHDR-macOS:
+  Lumen-macOS:
     type: application
     platform: macOS
     sources:
@@ -103,19 +103,19 @@ targets:
     info:
       path: Support/macOS/Info.plist
       properties:
-        CFBundleDisplayName: Plex HDR
+        CFBundleDisplayName: Lumen
         CFBundleShortVersionString: "0.2.0"
         CFBundleVersion: "2"
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-        NSLocalNetworkUsageDescription: Plex HDR connects to your Plex Media Server on the local network.
+        NSLocalNetworkUsageDescription: Lumen connects to your Plex Media Server on the local network.
         NSBonjourServices: [_plexmediasvr._tcp]
         LSApplicationCategoryType: public.app-category.entertainment
         NSHumanReadableCopyright: ""
     settings:
       base:
-        PRODUCT_NAME: PlexHDR
-        PRODUCT_BUNDLE_IDENTIFIER: com.egemenguray.plexhdr
+        PRODUCT_NAME: Lumen
+        PRODUCT_BUNDLE_IDENTIFIER: com.egemenguray.plexhdr   # kept so existing installs update in place
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) KSPLAYER
