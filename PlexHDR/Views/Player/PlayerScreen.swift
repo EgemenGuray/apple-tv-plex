@@ -298,7 +298,7 @@ struct TouchControls: View {
             Image(systemName: symbol)
                 .font(.system(size: size * 0.45, weight: .semibold))
                 .frame(width: size, height: size)
-                .backgcontrol(.black.opacity(0.35), in: Circle())
+                .background(.black.opacity(0.35), in: Circle())
         }
         .buttonStyle(.plain)
     }
@@ -322,13 +322,13 @@ struct SkipButton: View {
     let title: String
     let detail: String
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 14.s) {
             Text(title).font(.headline)
             Text(detail).font(.caption).foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 34).padding(.vertical, 18)
-        .backgcontrol(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.8), lineWidth: 2))
+        .padding(.horizontal, 34.s).padding(.vertical, 18.s)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.8), lineWidth: 2.s))
     }
 }
 
@@ -336,18 +336,18 @@ struct UpNextCard: View {
     let item: PlexItem
     let countdown: Int
     var body: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 24.s) {
             RemoteImage(url: PlexClient.shared.imageURL(item.thumb, width: 480, height: 270))
-                .frame(width: 320, height: 180).clipShape(RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 8) {
+                .frame(width: 320.s, height: 180.s).clipShape(RoundedRectangle(cornerRadius: 10.s))
+            VStack(alignment: .leading, spacing: 8.s) {
                 Text("Up Next in \(countdown)").font(.caption).foregroundStyle(.secondary)
                 Text(item.episodeLabel ?? "").font(.caption.bold())
                 Text(item.title).font(.headline).lineLimit(2)
-                Text("Click to play now · ◀ to keep watching").font(.caption2).foregroundStyle(.secondary)
+                Text(Platform.isTV ? "Click to play now · ◀ to keep watching" : "Tap to play now").font(.caption2).foregroundStyle(.secondary)
             }
-            .frame(width: 380, alignment: .leading)
+            .frame(width: 380.s, alignment: .leading)
         }
-        .padding(24)
-        .backgcontrol(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .padding(24.s)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20.s))
     }
 }
