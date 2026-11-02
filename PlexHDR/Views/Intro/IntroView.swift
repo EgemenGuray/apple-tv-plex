@@ -2,7 +2,8 @@ import AVFoundation
 import SwiftUI
 
 /// Startup intro: in the dark the light in the corner of the L ignites, the Lumen chime strikes, the light spills
-/// along the L, then the camera flies into the light and the app fades in. 3.6 s; any button or click skips it.
+/// along the L, then the camera zooms straight into the middle of the L (no pan) and the app opens behind it.
+/// 3.6 s; any button or click skips it.
 /// The same timeline is used on Shield (IntroScreen.kt) and Tizen (app/js/intro.js); the chime file is shared.
 enum IntroTimeline {
     static let duration = 3.6
@@ -16,9 +17,7 @@ enum IntroTimeline {
         var flare: Double    // bloom at the chime strike
         var radius: Double   // light gradient radius in logo units (64 = the app icon)
         var glow: Double
-        var zoom: Double     // 1 -> 70x
-        var pan: Double      // zoom target moves to the screen centre
-        var wash: Double     // warm wash while flying into the light
+        var zoom: Double     // 1 -> 14x, straight into the middle of the L
         var fade: Double     // intro layer opacity
     }
 
@@ -40,9 +39,7 @@ enum IntroTimeline {
             flare: flare,
             radius: 3 + 61 * spill,
             glow: min(1, ignite * (0.85 + 0.55 * flare) + breathe),
-            zoom: exp(log(70) * easeIn(z)),
-            pan: easeOut(z * 1.4),
-            wash: 0.5 * smooth(0.45, 1, z),
+            zoom: exp(log(14) * easeIn(z)),
             fade: 1 - smooth(fadeStart, duration, t))
     }
 }
@@ -71,12 +68,11 @@ enum IntroRenderer {
         let w = size.width, h = size.height
         let unit = min(w, h) * 0.0058
         let light = CGPoint(x: 33, y: 79)       // light source: the corner of the L
-        let focus = CGPoint(x: 38, y: 74)       // zoom target: brightest point on the bend
-        let restX = w / 2 + (focus.x - 59.5) * unit, restY = h / 2 + (focus.y - 47.5) * unit
+        let middle = CGPoint(x: 59.5, y: 47.5)  // middle of the L (centre of its bounds), kept at the screen centre
         var m = ctx
-        m.translateBy(x: restX + (w / 2 - restX) * s.pan, y: restY + (h / 2 - restY) * s.pan)
+        m.translateBy(x: w / 2, y: h / 2)
         m.scaleBy(x: unit * s.zoom, y: unit * s.zoom)
-        m.translateBy(x: -focus.x, y: -focus.y)
+        m.translateBy(x: -middle.x, y: -middle.y)
 
         if s.glow > 0.001 {
             let g = Gradient(stops: [
@@ -112,9 +108,6 @@ enum IntroRenderer {
                 .init(color: rgb(255, 170, 100, 0), location: 1)])
             f.fill(Path(CGRect(x: light.x - 90, y: light.y - 0.9, width: 180, height: 1.8)),
                    with: .linearGradient(streak, startPoint: CGPoint(x: light.x - 90, y: 0), endPoint: CGPoint(x: light.x + 90, y: 0)))
-        }
-        if s.wash > 0.001 {
-            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(rgb(255, 228, 190, s.wash)))
         }
     }
 }

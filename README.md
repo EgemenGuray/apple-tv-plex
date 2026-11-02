@@ -64,7 +64,7 @@ in the browser (the code and QR code still work too).
 
 ### Screens
 - **Startup intro** (3.6 s, once per launch): in the dark the light in the corner of the L ignites, the Lumen chime
-  plays, then the camera flies into the light and Home fades in. Any button, click or tap skips it. Settings →
+  plays, then the camera zooms straight into the middle of the L and Home opens behind it. Any button, click or tap skips it. Settings →
   Startup turns the intro or just the chime off. The chime is an original synthesized sound (`PlexHDR/Resources/`).
 - **Tab bar** at the top: Home, each movie and TV library, Search, Settings.
 - **Home** opens on a full-screen **top shelf**: big artwork, title logo, year, rating, runtime, genres, ratings and
