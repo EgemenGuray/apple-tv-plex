@@ -63,6 +63,9 @@ in the browser (the code and QR code still work too).
 ## What the app does
 
 ### Screens
+- **Startup intro** (3.6 s, once per launch): in the dark the light in the corner of the L ignites, the Lumen chime
+  plays, then the camera zooms straight into the middle of the L and Home opens behind it. Any button, click or tap skips it. Settings →
+  Startup turns the intro or just the chime off. The chime is an original synthesized sound (`PlexHDR/Resources/`).
 - **Tab bar** at the top: Home, each movie and TV library, Search, Settings.
 - **Home** opens on a full-screen **top shelf**: big artwork, title logo, year, rating, runtime, genres, ratings and
   summary, with Play/Resume and More Info. It moves to the next title every 9 s while you rest on it; ◀ on Play and ▶
@@ -187,6 +190,7 @@ iPhone and iPad too; the Mac build runs without one.
 | `PlexHDR/Services/BIF.swift` | Plex preview thumbnails |
 | `PlexHDR/Services/AppSettings.swift`, `Keys.swift` | Settings and optional build-time keys |
 | `PlexHDR/Views/Screens/` | Home + top shelf, libraries, show, details, person, collection, search, settings, sign-in |
+| `PlexHDR/Views/Intro/IntroView.swift` | Startup intro: timeline, Canvas renderer of the L, chime playback, skip |
 | `PlexHDR/Views/Player/` | Player controller (KSPlayer), overlay, timeline, scrubbing, panel tabs, Skip Intro, Up Next, touch controls |
 | `PlexHDR/Views/Player/AVPlayerBackend.swift` | iPhone/iPad: AVPlayer in place of KSPlayer, with its own text subtitle renderer |
 | `Shared/AppIcon.xcassets` | Icon for the Mac and iPhone/iPad apps |

@@ -80,6 +80,11 @@ struct SettingsView: View {
                 if Platform.isTV { Toggle("Match frame rate", isOn: $settings.matchFrameRate) }
             }
 
+            Section("Startup") {
+                Toggle("Lumen intro", isOn: $settings.introAnimation)
+                Toggle("Intro chime", isOn: $settings.introSound).disabled(!settings.introAnimation)
+            }
+
             Section {
                 Toggle("Artwork from TMDB", isOn: $settings.tmdbArtwork)
                 Toggle("Show ratings", isOn: $settings.showRatings)
