@@ -143,15 +143,15 @@ struct PlaylistEditor: View {
                 }
                 Section {
                     if p.kind == .m3u {
-                        TextField("Playlist address (http://…/playlist.m3u)", text: $p.url).noAutocaps()
+                        TextField("Playlist address (http://…/playlist.m3u)", text: $p.url).urlField()
                     } else {
-                        TextField("Server (http://host:port)", text: $p.url).noAutocaps()
-                        TextField("Username", text: $p.username).noAutocaps()
+                        TextField("Server (http://host:port)", text: $p.url).urlField()
+                        TextField("Username", text: $p.username).noAutocaps().textContentType(.username)
                         SecureField("Password", text: $p.password)
                     }
                 } header: { Text(p.kind == .m3u ? "M3U / M3U8" : "Xtream Codes") }
                 Section {
-                    TextField("Guide address (XMLTV, optional)", text: $p.epgURL).noAutocaps()
+                    TextField("Guide address (XMLTV, optional)", text: $p.epgURL).urlField()
                     TextField("User agent (optional)", text: $p.userAgent).noAutocaps()
                 } header: { Text("Optional") } footer: {
                     Text("Lumen uses the guide the playlist names. Add another XMLTV address here if it has none; separate several with commas.")
@@ -190,6 +190,15 @@ extension View {
         autocorrectionDisabled()
         #else
         textInputAutocapitalization(.never).autocorrectionDisabled()
+        #endif
+    }
+
+    /// Addresses: no capitals or autocorrect, and the keyboard with . / : and .com close at hand.
+    @ViewBuilder func urlField() -> some View {
+        #if os(macOS)
+        autocorrectionDisabled()
+        #else
+        noAutocaps().keyboardType(.URL).textContentType(.URL)
         #endif
     }
 }
