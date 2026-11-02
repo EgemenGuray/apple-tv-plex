@@ -11,12 +11,16 @@ struct PlaylistsView: View {
     @State private var newPIN = ""
     @State private var askPIN = false
     @State private var deleting: IPTVPlaylist?
+    @ObservedObject private var sq = IPTVSectionSearch.shared
 
     var body: some View {
         List {
             Section {
-                Button { adding = true } label: { Label("Add Playlist", systemImage: "plus.circle.fill") }
-                ForEach(store.playlists) { p in playlistRow(p) }
+                SectionSearchField(section: .playlists, prompt: "playlists")
+            }
+            Section {
+                if !sq.active(.playlists) { Button { adding = true } label: { Label("Add Playlist", systemImage: "plus.circle.fill") } }
+                ForEach(store.playlists.filter { sq.hits(.playlists, $0.name, $0.url, $0.kind.label) }) { p in playlistRow(p) }
             } header: { Text("Playlists") }
 
             Section {
@@ -195,13 +199,23 @@ extension View {
 struct JobsView: View {
     let kind: IPTVRecorder.Job.Kind
     @ObservedObject private var recorder = IPTVRecorder.shared
+    @ObservedObject private var sq = IPTVSectionSearch.shared
 
+    private var section: IPTVSection { kind == .download ? .downloads : .recordings }
     private var jobs: [IPTVRecorder.Job] { kind == .download ? recorder.downloads : recorder.recordings }
 
     var body: some View {
-        let list = jobs
-        Group {
-            if list.isEmpty {
+        let all = jobs
+        let list = all.filter { sq.hits(section, $0.title, $0.subtitle) }
+        VStack(alignment: .leading, spacing: 10.s) {
+            if !all.isEmpty {
+                SectionSearchField(section: section, prompt: kind == .download ? "downloads" : "recordings")
+                    .padding(.horizontal, Platform.isPhone ? 12 : 60.s)
+            }
+            if !all.isEmpty && list.isEmpty {
+                SectionNoMatch(section: section)
+                Spacer()
+            } else if list.isEmpty {
                 VStack(spacing: 16.s) {
                     Image(systemName: kind == .download ? "arrow.down.circle" : "record.circle").font(.system(size: 60.s))
                     Text(kind == .download ? "No downloads" : "No recordings").font(.headline)
@@ -234,11 +248,15 @@ struct JobsView: View {
     private func row(_ j: IPTVRecorder.Job) -> some View {
         Button { if j.state == .done { IPTVPlayerPresenter.shared.file(j) } } label: {
             HStack(spacing: 20.s) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8.s).fill(.white.opacity(0.06))
-                    RemoteImage(url: j.poster.flatMap { URL(string: $0) }, contentMode: .fit, placeholder: .clear)
+                if j.poster == nil, let ch = j.channelID.flatMap({ id in IPTVStore.shared.channels.first { $0.id == id } }) {
+                    ChannelLogo(channel: ch, size: 80.s).frame(width: 120.s, height: 80.s)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8.s).fill(.white.opacity(0.06))
+                        RemoteImage(url: j.poster.flatMap { URL(string: $0) }, contentMode: .fit, placeholder: .clear)
+                    }
+                    .frame(width: 120.s, height: 80.s)
                 }
-                .frame(width: 120.s, height: 80.s)
                 VStack(alignment: .leading, spacing: 6.s) {
                     Text(j.title).font(.headline).lineLimit(1)
                     if let s = j.subtitle { Text(s).font(.caption).foregroundStyle(.secondary).lineLimit(1) }

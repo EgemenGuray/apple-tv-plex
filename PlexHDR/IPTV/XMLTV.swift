@@ -8,6 +8,8 @@ final class XMLTVParser: NSObject, XMLParserDelegate {
     private(set) var programmes: [String: [IPTVProgramme]] = [:]
     /// Normalised display name → guide channel id, for playlists without tvg-id.
     private(set) var names: [String: String] = [:]
+    /// Guide channel id → channel icon (logo) address.
+    private(set) var icons: [String: String] = [:]
 
     private let wantedIDs: Set<String>
     private let wantedNames: Set<String>
@@ -19,6 +21,7 @@ final class XMLTVParser: NSObject, XMLParserDelegate {
     private var text = ""
     private var channelID: String?
     private var channelNames: [String] = []
+    private var channelIcon: String?
     private var current: IPTVProgramme?
 
     init(wantedIDs: Set<String>, wantedNames: Set<String>, from: Date, to: Date) {
@@ -46,13 +49,14 @@ final class XMLTVParser: NSObject, XMLParserDelegate {
         case "channel":
             channelID = a["id"]?.lowercased()
             channelNames = []
+            channelIcon = nil
         case "programme":
             guard let ch = a["channel"]?.lowercased(), kept.contains(ch) || wantedIDs.contains(ch),
                   let s = a["start"].flatMap(XMLTVParser.date), let e = a["stop"].flatMap(XMLTVParser.date) ?? Optional(s.addingTimeInterval(3600)),
                   e > from, s < to else { current = nil; return }
             current = IPTVProgramme(channel: ch, start: s, end: e, title: "")
         case "icon":
-            if current != nil { current?.icon = a["src"] }
+            if current != nil { current?.icon = a["src"] } else if channelID != nil, channelIcon == nil { channelIcon = a["src"] }
         default: break
         }
     }
@@ -67,7 +71,10 @@ final class XMLTVParser: NSObject, XMLParserDelegate {
         case "channel":
             if let id = channelID {
                 let keys = channelNames.map(\.iptvKey)
-                if wantedIDs.contains(id) || keys.contains(where: wantedNames.contains) { kept.insert(id) }
+                if wantedIDs.contains(id) || keys.contains(where: wantedNames.contains) {
+                    kept.insert(id)
+                    if let icon = channelIcon, !icon.isEmpty { icons[id] = icon }
+                }
                 for k in keys where names[k] == nil { names[k] = id }
             }
             channelID = nil
