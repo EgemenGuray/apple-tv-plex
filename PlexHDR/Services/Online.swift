@@ -63,6 +63,16 @@ final class Online {
         return sorted.first { code($0) == "en" } ?? sorted.first { code($0) == nil } ?? sorted.first
     }
 
+    /// What TMDB says is trending this week ("movie" or "tv"): titles and years, most popular first.
+    func trending(_ media: String) async -> [(title: String, year: Int?)] {
+        guard !settings.tmdbKey.isEmpty, let j = try? await tmdb("/trending/\(media)/week"), let results = j["results"] as? [JSON] else { return [] }
+        return results.compactMap { r in
+            guard let t = (r["title"] ?? r["name"]) as? String else { return nil }
+            let date = (r["release_date"] ?? r["first_air_date"]) as? String
+            return (t, date.flatMap { Int($0.prefix(4)) })
+        }
+    }
+
     /// Logo, backdrop and poster for a movie or show; cached on the Apple TV.
     func artwork(_ item: PlexItem) async -> Artwork? {
         guard !settings.tmdbKey.isEmpty, settings.tmdbArtwork else { return nil }
