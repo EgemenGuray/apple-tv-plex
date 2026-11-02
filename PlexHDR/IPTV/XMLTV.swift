@@ -85,7 +85,8 @@ final class XMLTVParser: NSObject, XMLParserDelegate {
                 let parts = t.split(separator: ".", omittingEmptySubsequences: false)
                 if parts.count >= 2, let s = Int(parts[0].split(separator: "/").first ?? ""), let e = Int(parts[1].split(separator: "/").first ?? "") {
                     let label = "S\(s + 1) E\(e + 1)"
-                    current?.episode = current?.episode.map { "\(label) · \($0)" } ?? label
+                    let existing = current?.episode
+                    current?.episode = existing.map { "\(label) · \($0)" } ?? label
                 } else if current?.episode == nil {
                     current?.episode = t
                 }
