@@ -88,10 +88,10 @@ struct SettingsView: View {
             Section {
                 Toggle("Artwork from TMDB", isOn: $settings.tmdbArtwork)
                 Toggle("Show ratings", isOn: $settings.showRatings)
-                TextField("TMDB API key or read token", text: $settings.tmdbKey)
-                TextField("OMDb API key", text: $settings.omdbKey)
-                TextField("OpenSubtitles API key", text: $settings.openSubtitlesKey)
-                TextField("OpenSubtitles username", text: $settings.openSubtitlesUser)
+                TextField("TMDB API key or read token", text: $settings.tmdbKey).noAutocaps()
+                TextField("OMDb API key", text: $settings.omdbKey).noAutocaps()
+                TextField("OpenSubtitles API key", text: $settings.openSubtitlesKey).noAutocaps()
+                TextField("OpenSubtitles username", text: $settings.openSubtitlesUser).noAutocaps()
                     .onChange(of: settings.openSubtitlesUser) { _, _ in Online.shared.resetLogin() }
                 SecureField("OpenSubtitles password", text: $settings.openSubtitlesPassword)
                     .onChange(of: settings.openSubtitlesPassword) { _, _ in Online.shared.resetLogin() }

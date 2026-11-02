@@ -474,7 +474,7 @@ struct IPTVSearchView: View {
                 .searchFieldStyle()
                 .frame(maxWidth: 1200.s)
                 .padding(.horizontal, 60.s)
-                .autocorrectionDisabled()
+                .noAutocaps()
             Picker("Search in", selection: $scope) {
                 ForEach(IPTVStore.SearchScope.allCases) { Text($0.label).tag($0) }
             }

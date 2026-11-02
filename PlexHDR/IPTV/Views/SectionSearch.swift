@@ -40,7 +40,7 @@ struct SectionSearchField: View {
 
     @ViewBuilder private func field(_ text: Binding<String>) -> some View {
         #if os(tvOS)
-        TextField("Search \(prompt)", text: text).autocorrectionDisabled()
+        TextField("Search \(prompt)", text: text).noAutocaps()
         #else
         TextField("Search \(prompt)", text: text).textFieldStyle(.roundedBorder).autocorrectionDisabled()
         #endif
