@@ -10,11 +10,17 @@ struct LiveTVView: View {
     @State private var askPIN = false
     @State private var pendingGroup: String?
     @State private var tagFilter: Set<IPTVTag> = []
+    @ObservedObject private var sq = IPTVSectionSearch.shared
 
     private var groups: [IPTVGroup] { store.groups(.live) }
 
     private var lineup: [IPTVChannel] {
         var list: [IPTVChannel]
+        if sq.active(.live) {
+            list = store.channels.filter { sq.hits(.live, $0.name, $0.group, store.nowNext($0).0?.title) }
+            if !tagFilter.isEmpty { list = list.filter { tagFilter.isSubset(of: store.tags($0)) } }
+            return list
+        }
         switch groupKey {
         case "all": list = store.channels
         case "favorites": list = store.favoriteChannels
@@ -27,6 +33,7 @@ struct LiveTVView: View {
     }
 
     private var groupTitle: String {
+        if sq.active(.live) { return "Search results" }
         switch groupKey {
         case "all": return "All Channels"
         case "favorites": return "Favorites"
@@ -49,6 +56,7 @@ struct LiveTVView: View {
                         Spacer()
                     }
                     .padding(.horizontal)
+                    SectionSearchField(section: .live, prompt: "channels and what's on").padding(.horizontal)
                     tagBar
                     ChannelList(channels: list, focused: $focused)
                 }
@@ -62,6 +70,7 @@ struct LiveTVView: View {
                             Spacer()
                         }
                         .padding(.horizontal, 30.s)
+                        SectionSearchField(section: .live, prompt: "channels and what's on").padding(.horizontal, 30.s)
                         tagBar
                         ChannelList(channels: list, focused: $focused)
                     }

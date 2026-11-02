@@ -81,14 +81,16 @@ struct MoviesView: View {
     @ObservedObject private var store = IPTVStore.shared
     @AppStorage("iptv.movieGroup") private var groupKey = "all"
     @AppStorage("iptv.movieSort") private var sort = "added"
+    @ObservedObject private var sq = IPTVSectionSearch.shared
 
     private var movies: [IPTVMovie] {
         var list: [IPTVMovie]
-        switch groupKey {
+        if sq.active(.movies) { list = store.movies.filter { sq.hits(.movies, $0.name, $0.group, $0.year.map(String.init)) } }
+        else { switch groupKey {
         case "all": list = store.movies
         case "favorites": list = store.favoriteMovies
         default: list = store.groups(.movie).first { $0.id == groupKey }.map { store.movies(in: $0) } ?? store.movies
-        }
+        } }
         switch sort {
         case "name": list.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         case "rating": list.sort { ($0.rating ?? 0) > ($1.rating ?? 0) }
@@ -101,9 +103,10 @@ struct MoviesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10.s) {
             GroupBar(kind: .movie, groupKey: $groupKey, sort: $sort)
+            SectionSearchField(section: .movies, prompt: "movies").padding(.horizontal, Platform.isPhone ? 12 : 60.s)
             ScrollView {
                 let resume = store.continueWatching
-                if groupKey == "all", !resume.isEmpty {
+                if groupKey == "all", !sq.active(.movies), !resume.isEmpty {
                     VStack(alignment: .leading, spacing: 12.s) {
                         Text("Continue Watching").font(.title3.bold()).padding(.horizontal, 60.s)
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -118,7 +121,8 @@ struct MoviesView: View {
                 }
                 let list = movies
                 if list.isEmpty {
-                    Text(store.loading.isEmpty ? "No movies." : "Loading…").foregroundStyle(.secondary).padding(60.s)
+                    if sq.active(.movies) { SectionNoMatch(section: .movies) }
+                    else { Text(store.loading.isEmpty ? "No movies." : "Loading…").foregroundStyle(.secondary).padding(60.s) }
                 }
                 LazyVGrid(columns: posterGrid(), spacing: 50.s) {
                     ForEach(list) { m in movieLink(m) }
@@ -222,14 +226,16 @@ struct SeriesView: View {
     @ObservedObject private var store = IPTVStore.shared
     @AppStorage("iptv.seriesGroup") private var groupKey = "all"
     @AppStorage("iptv.seriesSort") private var sort = "added"
+    @ObservedObject private var sq = IPTVSectionSearch.shared
 
     private var list: [IPTVSeries] {
         var l: [IPTVSeries]
-        switch groupKey {
+        if sq.active(.series) { l = store.series.filter { sq.hits(.series, $0.name, $0.group, $0.year.map(String.init)) } }
+        else { switch groupKey {
         case "all": l = store.series
         case "favorites": l = store.favoriteSeries
         default: l = store.groups(.series).first { $0.id == groupKey }.map { store.series(in: $0) } ?? store.series
-        }
+        } }
         switch sort {
         case "name": l.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         case "rating": l.sort { ($0.rating ?? 0) > ($1.rating ?? 0) }
@@ -242,9 +248,13 @@ struct SeriesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10.s) {
             GroupBar(kind: .series, groupKey: $groupKey, sort: $sort)
+            SectionSearchField(section: .series, prompt: "series").padding(.horizontal, Platform.isPhone ? 12 : 60.s)
             ScrollView {
                 let l = list
-                if l.isEmpty { Text(store.loading.isEmpty ? "No series." : "Loading…").foregroundStyle(.secondary).padding(60.s) }
+                if l.isEmpty {
+                    if sq.active(.series) { SectionNoMatch(section: .series) }
+                    else { Text(store.loading.isEmpty ? "No series." : "Loading…").foregroundStyle(.secondary).padding(60.s) }
+                }
                 LazyVGrid(columns: posterGrid(), spacing: 50.s) {
                     ForEach(l) { s in seriesLink(s) }
                 }
@@ -386,6 +396,7 @@ struct IPTVFavoritesView: View {
     @ObservedObject private var store = IPTVStore.shared
     @AppStorage("iptv.favTab") private var tab = "live"
     @State private var focused: IPTVChannel?
+    @ObservedObject private var sq = IPTVSectionSearch.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16.s) {
@@ -397,23 +408,29 @@ struct IPTVFavoritesView: View {
             }
             .padding(.horizontal, 60.s)
             .tvFocusSection()
+            SectionSearchField(section: .favorites, prompt: "favourites").padding(.horizontal, Platform.isPhone ? 12 : 60.s)
             switch tab {
             case "movies":
-                grid(store.favoriteMovies.map { ($0.id, IPTVRoute.movie($0), $0.poster, $0.name) })
+                grid(store.favoriteMovies.filter { sq.hits(.favorites, $0.name, $0.group) }.map { ($0.id, IPTVRoute.movie($0), $0.poster, $0.name) })
             case "series":
-                grid(store.favoriteSeries.map { ($0.id, IPTVRoute.series($0), $0.poster, $0.name) })
+                grid(store.favoriteSeries.filter { sq.hits(.favorites, $0.name, $0.group) }.map { ($0.id, IPTVRoute.series($0), $0.poster, $0.name) })
             default:
-                if store.favoriteChannels.isEmpty {
+                let chans = store.favoriteChannels.filter { sq.hits(.favorites, $0.name, $0.group, store.nowNext($0).0?.title) }
+                if chans.isEmpty && sq.active(.favorites) {
+                    SectionNoMatch(section: .favorites)
+                } else if chans.isEmpty {
                     empty("Long-press a channel and choose Add to Favorites.")
                 } else {
-                    ChannelList(channels: store.favoriteChannels, focused: $focused)
+                    ChannelList(channels: chans, focused: $focused)
                 }
             }
         }
     }
 
     @ViewBuilder private func grid(_ items: [(String, IPTVRoute, String?, String)]) -> some View {
-        if items.isEmpty {
+        if items.isEmpty && sq.active(.favorites) {
+            SectionNoMatch(section: .favorites)
+        } else if items.isEmpty {
             empty("Long-press a poster and choose Add to Favorites.")
         } else {
             ScrollView {

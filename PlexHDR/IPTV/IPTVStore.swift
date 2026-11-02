@@ -48,6 +48,7 @@ final class IPTVStore: ObservableObject {
     private var details: [String: IPTVDetails] = [:]
     private var epg: [String: [IPTVProgramme]] = [:]
     private var epgNames: [String: String] = [:]
+    private var epgIcons: [String: String] = [:]
     private var epgKeyCache: [String: String?] = [:]
     private var channelByID: [String: IPTVChannel] = [:]
     private let d = UserDefaults.standard
@@ -72,6 +73,7 @@ final class IPTVStore: ObservableObject {
         if let g = readGuideCache() {
             epg = g.programmes
             epgNames = g.names
+            epgIcons = g.icons ?? [:]
             guideUpdated = g.date
         }
         reminderTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { _ in
@@ -190,22 +192,25 @@ final class IPTVStore: ObservableObject {
         let to = Date().addingTimeInterval(4 * 86400)
         var merged: [String: [IPTVProgramme]] = [:]
         var mergedNames: [String: String] = [:]
+        var mergedIcons: [String: String] = [:]
         for (u, ua) in urls {
             guard let data = try? await fetch(u, userAgent: ua), !data.isEmpty else { continue }
-            let parsed = await Task.detached(priority: .utility) { () -> ([String: [IPTVProgramme]], [String: String]) in
+            let parsed = await Task.detached(priority: .utility) { () -> ([String: [IPTVProgramme]], [String: String], [String: String]) in
                 let p = XMLTVParser.parse(data, wantedIDs: ids, wantedNames: names, from: from, to: to)
-                return (p.programmes, p.names)
+                return (p.programmes, p.names, p.icons)
             }.value
             for (k, v) in parsed.0 where merged[k] == nil { merged[k] = v }
             for (k, v) in parsed.1 where mergedNames[k] == nil { mergedNames[k] = v }
+            for (k, v) in parsed.2 where mergedIcons[k] == nil { mergedIcons[k] = v }
         }
         guard !merged.isEmpty else { return }
         epg = merged
         epgNames = mergedNames
+        epgIcons = mergedIcons
         epgKeyCache = [:]
         guideUpdated = Date()
         guideVersion += 1
-        writeGuideCache(GuideCache(date: Date(), programmes: merged, names: mergedNames))
+        writeGuideCache(GuideCache(date: Date(), programmes: merged, names: mergedNames, icons: mergedIcons))
     }
 
     private func epgKey(_ ch: IPTVChannel) -> String? {
@@ -216,6 +221,13 @@ final class IPTVStore: ObservableObject {
         else if let orig = contents[ch.playlistID]?.channels.first(where: { $0.id == ch.id }), let id = epgNames[orig.name.iptvKey], epg[id] != nil { key = id }
         epgKeyCache[ch.id] = .some(key)
         return key
+    }
+
+    /// The playlist's logo, else the TV guide's icon for the channel.
+    func logo(_ ch: IPTVChannel) -> String? {
+        if let l = ch.logo, !l.isEmpty { return l }
+        if let id = ch.epgID?.lowercased(), let i = epgIcons[id] { return i }
+        return epgNames[ch.name.iptvKey].flatMap { epgIcons[$0] }
     }
 
     func programmes(_ ch: IPTVChannel) -> [IPTVProgramme] { epgKey(ch).flatMap { epg[$0] } ?? [] }
@@ -652,6 +664,7 @@ final class IPTVStore: ObservableObject {
         var date: Date
         var programmes: [String: [IPTVProgramme]]
         var names: [String: String]
+        var icons: [String: String]?
     }
 
     private func readGuideCache() -> GuideCache? {

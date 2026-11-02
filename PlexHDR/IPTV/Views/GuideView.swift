@@ -11,6 +11,7 @@ struct GuideView: View {
     @State private var picked: Picked?
     @State private var askPIN = false
     @State private var pendingGroup: String?
+    @ObservedObject private var sq = IPTVSectionSearch.shared
 
     struct Picked: Identifiable { let channel: IPTVChannel; let programme: IPTVProgramme; var id: String { programme.id + channel.id } }
 
@@ -26,6 +27,13 @@ struct GuideView: View {
 
     private var groups: [IPTVGroup] { store.groups(.live) }
     private var channels: [IPTVChannel] {
+        if sq.active(.guide) {
+            // Channels whose name matches, or that show a matching programme within a day of the guide's start.
+            let end = windowStart.addingTimeInterval(86400)
+            return store.channels.filter { ch in
+                sq.hits(.guide, ch.name) || store.programmes(ch, from: windowStart, to: end).contains { sq.hits(.guide, $0.title, $0.episode, $0.category) }
+            }
+        }
         switch groupKey {
         case "all": return store.channels
         case "favorites": return store.favoriteChannels
@@ -39,7 +47,11 @@ struct GuideView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10.s) {
             header
-            if !store.hasGuide {
+            SectionSearchField(section: .guide, prompt: "channels and programmes")
+            if store.hasGuide, sq.active(.guide), channels.isEmpty {
+                SectionNoMatch(section: .guide)
+                Spacer()
+            } else if !store.hasGuide {
                 VStack(spacing: 20.s) {
                     if store.guideLoading { ProgressView(); Text("Loading the TV guide…") }
                     else {

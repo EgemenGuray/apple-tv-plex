@@ -777,18 +777,31 @@ struct PanelRowStyle: ButtonStyle {
     }
 }
 
+/// A channel's logo from the playlist or the TV guide. Shows the channel's initials until it loads, and when there is
+/// none or it fails.
 struct ChannelLogo: View {
     let channel: IPTVChannel
     var size: CGFloat
+    @ObservedObject private var store = IPTVStore.shared
+    @State private var image: UIImage?
+
     var body: some View {
+        let url = store.logo(channel).flatMap { URL(string: $0) }
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.16).fill(.white.opacity(0.08))
-            if let logo = channel.logo, let url = URL(string: logo) {
-                RemoteImage(url: url, contentMode: .fit, placeholder: .clear).padding(size * 0.1)
+            RoundedRectangle(cornerRadius: size * 0.16).fill(.white.opacity(image == nil ? 0.08 : 0.04))
+            if let image {
+                Image(uiImage: image).resizable().aspectRatio(contentMode: .fit).padding(size * 0.1)
             } else {
-                Text(String(channel.name.prefix(2)).uppercased()).font(.system(size: size * 0.32, weight: .bold)).foregroundStyle(.secondary)
+                Text(channel.name.channelInitials).font(.system(size: size * 0.3, weight: .bold)).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.5).padding(.horizontal, size * 0.08)
             }
         }
         .frame(width: size * 1.4, height: size)
+        .task(id: url) {
+            guard let url else { image = nil; return }
+            if let c = ImageCache.shared.cached(url) { image = c; return }
+            image = nil
+            image = await ImageCache.shared.load(url)
+        }
     }
 }

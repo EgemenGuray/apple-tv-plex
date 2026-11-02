@@ -130,16 +130,13 @@ struct IPTVWelcome: View {
     }
 }
 
-/// IPTV without Plex: every section is a tab.
+/// IPTV without Plex: a Live TV tab (with the section bar) and a Plex tab.
 struct IPTVOnlyTabs: View {
-    @State private var tab = IPTVSection.home.rawValue
+    @State private var tab = "live"
     var body: some View {
         TabView(selection: $tab) {
-            ForEach(IPTVSection.allCases) { s in
-                NavigationStack { IPTVSectionView(section: s).iptvRoutes() }
-                    .tabItem { Label(s.title, systemImage: s.symbol) }
-                    .tag(s.rawValue)
-            }
+            IPTVHome()
+                .tabItem { Label("Live TV", systemImage: "tv") }.tag("live")
             NavigationStack { PlexLinkView() }
                 .tabItem { Label("Plex", systemImage: "server.rack") }.tag("plex")
         }
