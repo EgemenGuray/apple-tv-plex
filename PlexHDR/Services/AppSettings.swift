@@ -50,6 +50,8 @@ final class AppSettings: ObservableObject {
     @Published var matchFrameRate: Bool { didSet { d.set(matchFrameRate, forKey: "matchFrameRate") } }
     @Published var tmdbArtwork: Bool { didSet { d.set(tmdbArtwork, forKey: "tmdbArtwork") } }
     @Published var showRatings: Bool { didSet { d.set(showRatings, forKey: "showRatings") } }
+    @Published var introAnimation: Bool { didSet { d.set(introAnimation, forKey: "introAnimation") } }
+    @Published var introSound: Bool { didSet { d.set(introSound, forKey: "introSound") } }
 
     // Online services keys (free accounts). Keys.swift (git-ignored) can supply defaults at build time.
     @Published var tmdbKey: String { didSet { d.set(tmdbKey, forKey: "tmdbKey") } }
@@ -85,6 +87,8 @@ final class AppSettings: ObservableObject {
         matchFrameRate = b("matchFrameRate", true)
         tmdbArtwork = b("tmdbArtwork", true)
         showRatings = b("showRatings", true)
+        introAnimation = b("introAnimation", true)
+        introSound = b("introSound", true)
         tmdbKey = s("tmdbKey", BuildKeys.tmdb)
         omdbKey = s("omdbKey", BuildKeys.omdb)
         openSubtitlesKey = s("openSubtitlesKey", BuildKeys.openSubtitles)

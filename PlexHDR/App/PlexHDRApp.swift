@@ -7,9 +7,12 @@ import SwiftUI
 @main
 struct LumenApp: App {
     @Environment(\.scenePhase) private var phase
+    /// The startup intro plays once per launch (Settings → Startup can turn it off).
+    @State private var showIntro = AppSettings.shared.introAnimation
 
     init() {
         AudioSetup.configure()
+        if AppSettings.shared.introAnimation && AppSettings.shared.introSound { IntroChime.prepare() }
         #if KSPLAYER
         // The app's own FFmpeg player for everything (like Infuse). It decodes every audio codec to multichannel PCM,
         // which tvOS spatializes on AirPods. AVPlayer is only used when Decide picks it for Dolby Atmos (DD+).
@@ -27,7 +30,17 @@ struct LumenApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            ZStack {
+                RootView()
+                    .disabled(showIntro)
+                if showIntro {
+                    IntroView(playSound: AppSettings.shared.introSound) {
+                        withAnimation(.easeOut(duration: 0.25)) { showIntro = false }
+                    }
+                    .transition(.opacity)
+                    .zIndex(1)
+                }
+            }
                 .environmentObject(PlexClient.shared)
                 .environmentObject(AppSettings.shared)
                 .environmentObject(PlayerPresenter.shared)
