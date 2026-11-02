@@ -213,8 +213,8 @@ struct GuideView: View {
 
 struct GuideCellStyle: ButtonStyle {
     var airing: Bool
-    func makeBody(configuration: Configuration) -> some View { Body(configuration: configuration, airing: airing) }
-    private struct Body: View {
+    func makeBody(configuration: Configuration) -> some View { CellBody(configuration: configuration, airing: airing) }
+    private struct CellBody: View {
         let configuration: ButtonStyleConfiguration
         let airing: Bool
         @Environment(\.isFocused) private var focused

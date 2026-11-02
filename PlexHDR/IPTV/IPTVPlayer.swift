@@ -762,8 +762,8 @@ struct IPTVTrackPanel: View {
 
 /// A list row that highlights on focus (Apple TV, keyboard) and on press.
 struct PanelRowStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View { Body(configuration: configuration) }
-    private struct Body: View {
+    func makeBody(configuration: Configuration) -> some View { RowBody(configuration: configuration) }
+    private struct RowBody: View {
         let configuration: ButtonStyleConfiguration
         @Environment(\.isFocused) private var focused
         var body: some View {

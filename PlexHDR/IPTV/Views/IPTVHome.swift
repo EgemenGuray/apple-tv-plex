@@ -162,8 +162,8 @@ struct PlexLinkView: View {
 
 struct PillStyle: ButtonStyle {
     var selected: Bool
-    func makeBody(configuration: Configuration) -> some View { Body(configuration: configuration, selected: selected) }
-    private struct Body: View {
+    func makeBody(configuration: Configuration) -> some View { PillBody(configuration: configuration, selected: selected) }
+    private struct PillBody: View {
         let configuration: ButtonStyleConfiguration
         let selected: Bool
         @Environment(\.isFocused) private var focused
