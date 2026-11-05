@@ -300,7 +300,7 @@ final class PlayerController: ObservableObject {
         // External files, and on iPhone/iPad embedded text tracks too, come from the server as files.
         guard let url = PlexClient.shared.subtitleURL(s) ?? PlexClient.shared.streamFileURL(s) else { return }
         if !Platform.hasFFmpeg, Decide.isImageSub(s) {
-            show(notice: "Image subtitles (PGS/VobSub) can't be shown on this device. Search online in Subtitles for a text version."
+            show(notice: "Image subtitles (PGS/VobSub) can't be shown on this device. Search online in Audio & Subtitles for a text version.")
             return
         }
         do {
