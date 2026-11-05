@@ -2,8 +2,10 @@ import SwiftUI
 
 // MARK: - Playlists
 
-/// Sources, guide, parental PIN, hidden groups.
+/// The Sources tab (playlists) or the Live TV Settings tab (guide, parental PIN, hidden groups, library).
 struct PlaylistsView: View {
+    enum Part { case sources, settings }
+    var part: Part = .sources
     @ObservedObject private var store = IPTVStore.shared
     @State private var editing: IPTVPlaylist?
     @State private var adding = false
@@ -15,56 +17,7 @@ struct PlaylistsView: View {
 
     var body: some View {
         List {
-            Section {
-                SectionSearchField(section: .playlists, prompt: "playlists")
-            }
-            Section {
-                if !sq.active(.playlists) { Button { adding = true } label: { Label("Add Playlist", systemImage: "plus.circle.fill") } }
-                ForEach(store.playlists.filter { sq.hits(.playlists, $0.name, $0.url, $0.kind.label) }) { p in playlistRow(p) }
-            } header: { Text("Playlists") }
-
-            Section {
-                HStack {
-                    Text(store.guideUpdated.map { "Updated \(IPTVFormat.day($0)) \(IPTVFormat.time($0))" } ?? "Not loaded")
-                    Spacer()
-                    if store.guideLoading { ProgressView() }
-                }
-                Button("Refresh Guide") { Task { await store.refreshGuide() } }
-                Button("Refresh Everything") { Task { await store.refreshAll() } }
-            } header: { Text("TV Guide") }
-
-            Section {
-                if store.pin.isEmpty {
-                    Button("Set a PIN") { newPIN = ""; settingPIN = true }
-                } else {
-                    Button(store.unlocked ? "Lock Locked Groups Again" : "Unlock Locked Groups") {
-                        if store.unlocked { store.lock() } else { askPIN = true }
-                    }
-                    Button("Change PIN") { newPIN = ""; settingPIN = true }
-                    Button("Remove PIN", role: .destructive) { store.setPIN(""); for g in store.groups(.live, includeHidden: true) + store.groups(.movie, includeHidden: true) + store.groups(.series, includeHidden: true) where store.isLocked(g) { store.setLocked(g, false) } }
-                }
-                Text("Long-press a group to lock it with the PIN or hide it.").font(.caption).foregroundStyle(.secondary)
-            } header: { Text("Parental Control") }
-
-            let hidden = (store.groups(.live, includeHidden: true) + store.groups(.movie, includeHidden: true) + store.groups(.series, includeHidden: true)).filter(store.isHidden)
-            if !hidden.isEmpty {
-                Section {
-                    ForEach(hidden) { g in
-                        Button { store.setHidden(g, false) } label: {
-                            HStack { Text(g.name); Spacer(); Text(g.kind == .live ? "Live TV" : g.kind == .movie ? "Movies" : "Series").foregroundStyle(.secondary); Image(systemName: "eye") }
-                        }
-                    }
-                } header: { Text("Hidden Groups (select to show again)") }
-            }
-
-            Section {
-                Button("Clear Recently Watched") { store.clearRecents() }
-                if !store.reminders.isEmpty {
-                    ForEach(store.reminders) { r in
-                        HStack { Text(r.title); Spacer(); Text("\(r.channelName) · \(IPTVFormat.day(r.start)) \(IPTVFormat.time(r.start))").foregroundStyle(.secondary) }
-                    }
-                }
-            } header: { Text("Library") }
+            if part == .sources { sources } else { settings }
         }
         .sheet(isPresented: $adding) { PlaylistEditor(playlist: nil) }
         .sheet(item: $editing) { PlaylistEditor(playlist: $0) }
@@ -78,6 +31,61 @@ struct PlaylistsView: View {
             Button("Cancel", role: .cancel) {}
         }
         .pinPrompt($askPIN)
+    }
+
+    @ViewBuilder private var sources: some View {
+        Section {
+            SectionSearchField(section: .playlists, prompt: "sources")
+        }
+        Section {
+            if !sq.active(.playlists) { Button { adding = true } label: { Label("Add Playlist", systemImage: "plus.circle.fill") } }
+            ForEach(store.playlists.filter { sq.hits(.playlists, $0.name, $0.url, $0.kind.label) }) { p in playlistRow(p) }
+        } header: { Text("Sources") } footer: { Text("M3U playlists and Xtream Codes logins from your TV provider.") }
+    }
+
+    @ViewBuilder private var settings: some View {
+        Section {
+            HStack {
+                Text(store.guideUpdated.map { "Updated \(IPTVFormat.day($0)) \(IPTVFormat.time($0))" } ?? "Not loaded")
+                Spacer()
+                if store.guideLoading { ProgressView() }
+            }
+            Button("Refresh Guide") { Task { await store.refreshGuide() } }
+            Button("Refresh Everything") { Task { await store.refreshAll() } }
+        } header: { Text("TV Guide") }
+
+        Section {
+            if store.pin.isEmpty {
+                Button("Set a PIN") { newPIN = ""; settingPIN = true }
+            } else {
+                Button(store.unlocked ? "Lock Locked Groups Again" : "Unlock Locked Groups") {
+                    if store.unlocked { store.lock() } else { askPIN = true }
+                }
+                Button("Change PIN") { newPIN = ""; settingPIN = true }
+                Button("Remove PIN", role: .destructive) { store.setPIN(""); for g in store.groups(.live, includeHidden: true) + store.groups(.movie, includeHidden: true) + store.groups(.series, includeHidden: true) where store.isLocked(g) { store.setLocked(g, false) } }
+            }
+            Text("Long-press a group to lock it with the PIN or hide it.").font(.caption).foregroundStyle(.secondary)
+        } header: { Text("Parental Control") }
+
+        let hidden = (store.groups(.live, includeHidden: true) + store.groups(.movie, includeHidden: true) + store.groups(.series, includeHidden: true)).filter(store.isHidden)
+        if !hidden.isEmpty {
+            Section {
+                ForEach(hidden) { g in
+                    Button { store.setHidden(g, false) } label: {
+                        HStack { Text(g.name); Spacer(); Text(g.kind == .live ? "Live TV" : g.kind == .movie ? "Movies" : "Series").foregroundStyle(.secondary); Image(systemName: "eye") }
+                    }
+                }
+            } header: { Text("Hidden Groups (select to show again)") }
+        }
+
+        Section {
+            Button("Clear Recently Watched") { store.clearRecents() }
+            if !store.reminders.isEmpty {
+                ForEach(store.reminders) { r in
+                    HStack { Text(r.title); Spacer(); Text("\(r.channelName) · \(IPTVFormat.day(r.start)) \(IPTVFormat.time(r.start))").foregroundStyle(.secondary) }
+                }
+            }
+        } header: { Text("Library") }
     }
 
     private func playlistRow(_ p: IPTVPlaylist) -> some View {
@@ -204,6 +212,28 @@ extension View {
 }
 
 // MARK: - Downloads and recordings
+
+/// The Recordings tab: recordings and downloads behind a switch.
+struct RecordingsView: View {
+    @AppStorage("iptv.jobsKind") private var showDownloads = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16.s) {
+            Picker("Show", selection: $showDownloads) {
+                Text("Recordings").tag(false)
+                Text("Downloads").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: Platform.isPhone ? .infinity : 700.s)
+            .padding(.horizontal, Platform.isPhone ? 12 : 60.s)
+            .padding(.top, 10.s)
+            .tvFocusSection()
+            JobsView(kind: showDownloads ? .download : .recording)
+                .id(showDownloads)
+        }
+    }
+}
 
 struct JobsView: View {
     let kind: IPTVRecorder.Job.Kind
