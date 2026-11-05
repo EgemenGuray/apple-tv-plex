@@ -59,6 +59,7 @@ final class IPTVPlayerController: ObservableObject {
     private var stallTask: Task<Void, Never>?
     private var numberTask: Task<Void, Never>?
     private var lastSave = Date.distantPast
+    private var lastNowPlaying = Date.distantPast
     var onClose: (() -> Void)?
 
     init(request: IPTVPlayerPresenter.Request) {
@@ -103,6 +104,18 @@ final class IPTVPlayerController: ObservableObject {
         noteWatching()
         var at: TimeInterval = 0
         if let id = resumeID { at = store.position(id) ?? 0 }
+        var handlers = NowPlaying.Handlers(
+            play: { [weak self] in if self?.isPlaying == false { self?.togglePlay() } },
+            pause: { [weak self] in if self?.isPlaying == true { self?.togglePlay() } },
+            toggle: { [weak self] in self?.togglePlay() },
+            skip: nil,
+            seek: nil
+        )
+        if !isLive {
+            handlers.skip = { [weak self] (s: TimeInterval) in self?.skip(s) }
+            handlers.seek = { [weak self] (t: TimeInterval) in self?.seek(to: t) }
+        }
+        NowPlaying.shared.activate(owner: self, handlers: handlers)
         open(at: at)
         hideSoon()
     }
@@ -134,7 +147,8 @@ final class IPTVPlayerController: ObservableObject {
         let o = KSOptions()
         o.startPlayTime = start
         o.isAccurateSeek = true
-        o.registerRemoteControll = true
+        // NowPlaying handles the remote commands and the Now Playing card.
+        o.registerRemoteControll = false
         o.autoSelectEmbedSubtitle = false
         if let ua, !ua.isEmpty { o.userAgent = ua }
         if isLive { o.isLive = true }
@@ -150,6 +164,23 @@ final class IPTVPlayerController: ObservableObject {
         subtitles = []
         subtitleID = nil
         layerVersion += 1
+        publishNowPlaying()
+    }
+
+    private func publishNowPlaying() {
+        lastNowPlaying = Date()
+        var subtitle: String?
+        var art: String?
+        switch kind {
+        case let .live(c): subtitle = "Live TV"; art = store.logo(c)
+        case let .catchup(c, _): subtitle = c.name; art = store.logo(c)
+        case let .movie(m): art = m.poster
+        case let .episode(series, _, _): art = series.poster
+        case .file: subtitle = "Recording"
+        }
+        NowPlaying.shared.update(owner: self, .init(title: title, subtitle: subtitle, duration: duration, elapsed: time,
+                                                    rate: isPlaying ? 1 : 0, isLive: isLive))
+        NowPlaying.shared.setArtwork(owner: self, url: art.flatMap { URL(string: $0) })
     }
 
     // MARK: - Events
@@ -166,11 +197,13 @@ final class IPTVPlayerController: ObservableObject {
         }
         if s == .buffering, isLive { watchStall() } else { stallTask?.cancel() }
         if s == .bufferFinished { status = nil }
+        publishNowPlaying()
     }
 
     fileprivate func timeChanged(_ t: TimeInterval, _ total: TimeInterval) {
         time = t
         if total > 0 { duration = total }
+        if Date().timeIntervalSince(lastNowPlaying) > 5 { publishNowPlaying() }
         if let id = resumeID, Date().timeIntervalSince(lastSave) > 10 {
             lastSave = Date()
             store.savePosition(id, t, duration: duration)
@@ -286,6 +319,7 @@ final class IPTVPlayerController: ObservableObject {
         let t = max(0, min(duration - 1, time + s))
         time = t
         layer?.seek(time: t, autoPlay: true)
+        publishNowPlaying()
         showOverlay(autoHide: true)
     }
 
@@ -293,6 +327,7 @@ final class IPTVPlayerController: ObservableObject {
         guard canSeek else { return }
         time = t
         layer?.seek(time: t, autoPlay: true)
+        publishNowPlaying()
     }
 
     // MARK: - Tracks
@@ -334,6 +369,7 @@ final class IPTVPlayerController: ObservableObject {
         if let id = resumeID { store.savePosition(id, time, duration: duration) }
         hideTask?.cancel()
         stallTask?.cancel()
+        NowPlaying.shared.clear(owner: self)
         layer?.delegate = nil
         layer?.stop()
         onClose?()
