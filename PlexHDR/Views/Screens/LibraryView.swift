@@ -50,6 +50,14 @@ struct LibraryView: View {
         .task(id: "\(sort)|\(unwatched)|\(genre?.key ?? "")") { await reload() }
         .task { genres = (try? await PlexClient.shared.genres(section.id)) ?? [] }
         .onChange(of: presenter.playbackEnded) { _, _ in Task { await reload() } }
+        .environment(\.cardChanged, { item in Task { await refresh(item) } })
+    }
+
+    /// Reloads one card in place after its menu changed it, keeping the scroll position.
+    private func refresh(_ item: PlexItem) async {
+        guard let rk = item.ratingKey, let m = try? await PlexClient.shared.metadata(rk) else { return }
+        if unwatched && m.isWatched { items.removeAll { $0.id == item.id }; total = max(0, total - 1); return }
+        if let i = items.firstIndex(where: { $0.id == item.id }) { items[i] = m }
     }
 
     private var filterBar: some View {
@@ -174,10 +182,17 @@ struct PersonView: View {
 struct SearchView: View {
     @State private var query = ""
     @State private var results: [PlexItem] = []
+    /// The last 10 searches, newest first, one per line.
+    @AppStorage("plex.recentSearches") private var recentRaw = ""
     private let columns = posterColumns()
+
+    private var recent: [String] { recentRaw.split(separator: "\n").map(String.init) }
 
     var body: some View {
         ScrollView {
+            if query.trimmingCharacters(in: .whitespaces).isEmpty && !recent.isEmpty {
+                recentList
+            }
             LazyVGrid(columns: columns, alignment: .leading, spacing: 60.s) {
                 ForEach(results) { item in
                     ItemLink(item: item) {
@@ -192,12 +207,61 @@ struct SearchView: View {
             .padding(80.s)
         }
         .searchable(text: $query, prompt: "Movies, shows, episodes")
+        .onSubmit(of: .search) { remember(query, submitted: true) }
+        .environment(\.cardChanged, { item in Task { await refresh(item) } })
         .task(id: query) {
             let q = query.trimmingCharacters(in: .whitespaces)
             guard q.count >= 2 else { results = []; return }
             try? await Task.sleep(nanoseconds: 300_000_000)
             guard !Task.isCancelled else { return }
             results = (try? await PlexClient.shared.search(q)) ?? []
+            // A search that found something is remembered once typing has paused.
+            guard !results.isEmpty else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if !Task.isCancelled { remember(q) }
         }
+    }
+
+    private var recentList: some View {
+        VStack(alignment: .leading, spacing: 20.s) {
+            HStack {
+                Text("Recent Searches").font(.title3.bold())
+                Spacer()
+                Button("Clear") { recentRaw = "" }
+            }
+            .tvFocusSection()
+            VStack(alignment: .leading, spacing: 8.s) {
+                ForEach(recent, id: \.self) { q in
+                    Button { query = q } label: {
+                        Label(q, systemImage: "clock.arrow.circlepath").frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    #if !os(tvOS)
+                    .buttonStyle(.plain)
+                    .padding(.vertical, 6.s)
+                    #endif
+                }
+            }
+            .tvFocusSection()
+        }
+        .frame(maxWidth: 1200.s, alignment: .leading)
+        .padding(.horizontal, 80.s).padding(.top, 40.s)
+    }
+
+    /// Adds a search to the top of the list. Typing "bre", "brea", "break" keeps only "break"; deleting letters
+    /// back to "bre" doesn't add it again unless it is submitted.
+    private func remember(_ raw: String, submitted: Bool = false) {
+        let q = raw.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2 else { return }
+        let lq = q.lowercased()
+        if !submitted && recent.contains(where: { $0.lowercased() != lq && $0.lowercased().hasPrefix(lq) }) { return }
+        var list = recent.filter { !lq.hasPrefix($0.lowercased()) }
+        list.insert(q, at: 0)
+        recentRaw = list.prefix(10).joined(separator: "\n")
+    }
+
+    private func refresh(_ item: PlexItem) async {
+        guard let rk = item.ratingKey, let m = try? await PlexClient.shared.metadata(rk),
+              let i = results.firstIndex(where: { $0.id == item.id }) else { return }
+        results[i] = m
     }
 }
