@@ -104,13 +104,18 @@ final class IPTVPlayerController: ObservableObject {
         noteWatching()
         var at: TimeInterval = 0
         if let id = resumeID { at = store.position(id) ?? 0 }
-        NowPlaying.shared.activate(owner: self, handlers: .init(
+        var handlers = NowPlaying.Handlers(
             play: { [weak self] in if self?.isPlaying == false { self?.togglePlay() } },
             pause: { [weak self] in if self?.isPlaying == true { self?.togglePlay() } },
             toggle: { [weak self] in self?.togglePlay() },
-            skip: isLive ? nil : { [weak self] s in self?.skip(s) },
-            seek: isLive ? nil : { [weak self] t in self?.seek(to: t) }
-        ))
+            skip: nil,
+            seek: nil
+        )
+        if !isLive {
+            handlers.skip = { [weak self] (s: TimeInterval) in self?.skip(s) }
+            handlers.seek = { [weak self] (t: TimeInterval) in self?.seek(to: t) }
+        }
+        NowPlaying.shared.activate(owner: self, handlers: handlers)
         open(at: at)
         hideSoon()
     }
