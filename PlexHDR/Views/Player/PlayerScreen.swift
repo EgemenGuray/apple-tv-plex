@@ -63,6 +63,8 @@ struct PlayerContainer: View {
     let request: PlayerPresenter.Request
     let close: () -> Void
     @FocusState private var rootFocused: Bool
+    @FocusState private var errorFocus: ErrorAction?
+    enum ErrorAction: Hashable { case retry, version, close }
 
     init(item: PlexItem, request: PlayerPresenter.Request, close: @escaping () -> Void) {
         _c = StateObject(wrappedValue: PlayerController(item: item, mediaIndex: request.mediaIndex, audioId: request.audioId, subtitleId: request.subtitleId))
@@ -79,13 +81,30 @@ struct PlayerContainer: View {
             if c.state == .preparing || c.state == .buffering {
                 ProgressView().scaleEffect(1.5)
             }
-            if let err = c.error {
-                Text(err).padding(30.s).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16.s))
-            }
 
             input
+            #if os(tvOS)
+            TouchSurfaceScrubber(c: c).frame(width: 0, height: 0).allowsHitTesting(false)
+            #endif
             if c.overlayVisible || c.scrubTime != nil {
                 PlayerOverlay(c: c).transition(.opacity).allowsHitTesting(false)
+            }
+            if let s = c.pendingSkip {
+                Text(skipLabel(s))
+                    .font(.system(size: 54.s, weight: .bold, design: .rounded)).monospacedDigit()
+                    .padding(.horizontal, 36.s).padding(.vertical, 16.s)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+            if let n = c.notice {
+                Text(n).font(.callout).multilineTextAlignment(.center)
+                    .padding(.horizontal, 30.s).padding(.vertical, 18.s)
+                    .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16.s))
+                    .frame(maxWidth: 1200.s)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 80.s)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
             #if !os(tvOS)
             if c.overlayVisible && c.panel == nil {
@@ -102,16 +121,21 @@ struct PlayerContainer: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 90.s).padding(.bottom, c.overlayVisible ? 260.s : 90.s)
             }
-            if c.panel != nil {
+            if c.panel != nil && c.error == nil {
                 PlayerPanel(c: c)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            if let err = c.error {
+                errorView(err)
             }
         }
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 0.25), value: c.panel)
         .animation(.easeInOut(duration: 0.3), value: c.overlayVisible)
+        .animation(.easeInOut(duration: 0.15), value: c.pendingSkip != nil)
         .onPlayPause {
+            guard c.error == nil else { return }
             if c.scrubTime != nil { c.commitScrub() } else { c.togglePlay() }
         }
         .onBack(perform: back)
@@ -123,7 +147,10 @@ struct PlayerContainer: View {
             UIApplication.shared.isIdleTimerDisabled = true
             #endif
         }
-        .onChange(of: c.panel) { _, p in if p == nil { rootFocused = true } }
+        .onChange(of: c.panel) { _, p in if p == nil && c.error == nil { rootFocused = true } }
+        .onChange(of: c.error) { _, e in
+            if e != nil { c.panel = nil; errorFocus = .retry } else { rootFocused = true }
+        }
         .onDisappear {
             TitleMemory.shared.flush()
             #if os(iOS)
@@ -144,7 +171,7 @@ struct PlayerContainer: View {
         Button { select() } label: { Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity) }
             .buttonStyle(InvisibleButtonStyle())
             .focused($rootFocused)
-            .disabled(c.panel != nil)
+            .disabled(c.panel != nil || c.error != nil)
             .onMoveCommand(perform: move)
         #else
         Color.clear
@@ -162,6 +189,7 @@ struct PlayerContainer: View {
                 if case .active = phase, !c.overlayVisible { c.showOverlay(autoHide: c.isPlaying) }
             }
             .onKeyPress(.space) {
+                guard c.error == nil else { return .ignored }
                 if c.scrubTime != nil { c.commitScrub() } else { c.togglePlay() }
                 return .handled
             }
@@ -183,7 +211,43 @@ struct PlayerContainer: View {
         }
     }
 
+    /// The error card: try the same file again, another version of the title, or leave.
+    private func errorView(_ err: String) -> some View {
+        VStack(spacing: 30.s) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 54.s)).foregroundStyle(.yellow)
+            Text("Couldn't play this").font(.title3.bold())
+            Text(err).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 1100.s)
+            HStack(spacing: 30.s) {
+                Button { c.retry() } label: { Label("Try Again", systemImage: "arrow.clockwise") }
+                    .focused($errorFocus, equals: .retry)
+                if c.hasOtherVersions {
+                    Button { c.tryOtherVersion() } label: { Label("Other Version", systemImage: "square.stack") }
+                        .focused($errorFocus, equals: .version)
+                }
+                Button { c.close() } label: { Label("Close", systemImage: "xmark") }
+                    .focused($errorFocus, equals: .close)
+            }
+            #if !os(tvOS)
+            .buttonStyle(.borderedProminent)
+            .tint(.white.opacity(0.2))
+            #endif
+            .tvFocusSection()
+        }
+        .padding(50.s)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24.s))
+        .onAppear { errorFocus = .retry }
+    }
+
+    private func skipLabel(_ s: TimeInterval) -> String {
+        let n = Int(s.rounded())
+        let a = abs(n)
+        let text = a >= 120 ? (a % 60 == 0 ? "\(a / 60) min" : "\(a / 60):\(String(format: "%02d", a % 60))") : "\(a) s"
+        return (n < 0 ? "−" : "+") + text
+    }
+
     private func select() {
+        if c.error != nil { return }
+        if c.pendingSkip != nil { c.flushSkip(); return }
         if c.scrubTime != nil { c.commitScrub(); return }
         if c.upNext != nil { c.playUpNext(); return }
         if c.introMarker != nil { c.skipIntro(); return }
@@ -195,19 +259,25 @@ struct PlayerContainer: View {
         case .left, .right:
             let dir = d == .left ? -1 : 1
             if c.upNext != nil, d == .left { c.dismissUpNext(); return }
+            // The touch surface already moved the scrub head for this swipe.
+            if c.touchScrubJustEnded { return }
             if !c.isPlaying || c.scrubTime != nil { c.scrub(dir) }
-            else { c.skip(Double(dir > 0 ? AppSettings.shared.skipForward : -AppSettings.shared.skipBack)) }
+            else { c.queueSkip(Double(dir > 0 ? AppSettings.shared.skipForward : -AppSettings.shared.skipBack)) }
         case .up:
             c.showOverlay(autoHide: c.isPlaying)
         case .down:
-            c.panel = .info
+            c.flushSkip()
+            c.panel = .tracks
             c.showOverlay(autoHide: false)
         @unknown default: break
         }
     }
 
     private func back() {
+        if c.error != nil { c.close(); return }
+        if c.adjustingDelay { c.adjustingDelay = false; return }
         if c.panel != nil { c.panel = nil; c.hideOverlaySoon(); return }
+        if c.pendingSkip != nil { c.cancelSkip(); return }
         if c.scrubTime != nil { c.cancelScrub(); return }
         if c.upNext != nil { c.dismissUpNext(); return }
         if c.overlayVisible && c.isPlaying { withAnimation { c.overlayVisible = false }; return }
@@ -254,11 +324,10 @@ struct TouchControls: View {
             HStack(spacing: 22) {
                 control("xmark") { c.close() }
                 Spacer()
-                control("info.circle") { open(.info) }
+                control("captions.bubble") { open(.tracks) }
                 control("list.bullet") { open(.chapters) }
-                control("speaker.wave.2") { open(.audio) }
-                control("captions.bubble") { open(.subtitles) }
                 control("aspectratio") { open(.picture) }
+                control("info.circle") { open(.info) }
                 #if os(iOS)
                 RoutePicker().frame(width: 44, height: 44)
                 #endif
@@ -266,9 +335,9 @@ struct TouchControls: View {
             .padding(.top, 70.s)
             Spacer()
             HStack(spacing: 70.s + 20) {
-                control("gobackward.\(AppSettings.shared.skipBack)", big: false) { c.skip(-Double(AppSettings.shared.skipBack)) }
+                control("gobackward.\(AppSettings.shared.skipBack)", big: false) { c.queueSkip(-Double(AppSettings.shared.skipBack)) }
                 control(c.isPlaying ? "pause.fill" : "play.fill", big: true) { c.togglePlay() }
-                control("goforward.\(AppSettings.shared.skipForward)", big: false) { c.skip(Double(AppSettings.shared.skipForward)) }
+                control("goforward.\(AppSettings.shared.skipForward)", big: false) { c.queueSkip(Double(AppSettings.shared.skipForward)) }
             }
             Spacer()
             GeometryReader { g in

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Swipe-down panel with tabs: Info, Chapters, Audio, Subtitles, Picture.
+/// Swipe-down panel with tabs: Audio & Subtitles (first), Chapters, Picture, Info.
 struct PlayerPanel: View {
     @ObservedObject var c: PlayerController
     @FocusState private var focusedTab: PlayerController.Panel?
@@ -23,15 +23,15 @@ struct PlayerPanel: View {
                 }
             }
             .tvFocusSection()
+            .disabled(c.adjustingDelay)
             .onChange(of: focusedTab) { _, t in if let t { c.panel = t } }
 
             Group {
-                switch c.panel ?? .info {
-                case .info: InfoTab(c: c)
+                switch c.panel ?? .tracks {
+                case .tracks: TracksTab(c: c).scrollsHorizontallyOnSmallScreens()
                 case .chapters: ChaptersTab(c: c)
-                case .audio: AudioTab(c: c).scrollsHorizontallyOnSmallScreens()
-                case .subtitles: SubtitlesTab(c: c).scrollsHorizontallyOnSmallScreens()
                 case .picture: PictureTab(c: c)
+                case .info: InfoTab(c: c)
                 }
             }
             .frame(height: 360.s, alignment: .topLeading)
@@ -41,6 +41,7 @@ struct PlayerPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.ultraThinMaterial)
         .onAppear { focusedTab = c.panel }
+        .onDisappear { c.adjustingDelay = false }
     }
 }
 
@@ -74,6 +75,7 @@ private struct InfoTab: View {
                 Text(c.item.summary ?? "").font(.caption).lineLimit(4).frame(maxWidth: 1100.s, alignment: .leading)
                 Text("Video: \(c.videoInfo)").font(.caption)
                 Text("Audio: \(c.audioInfo)").font(.caption)
+                Text("5.1, 7.1 and Dolby Atmos play as Spatial Audio on AirPods.").font(.caption2).foregroundStyle(.secondary)
                 Text("Player: \(c.engineName) · \(c.plan.note)").font(.caption2).foregroundStyle(.secondary).frame(maxWidth: 1300.s, alignment: .leading)
                 // A focusable element so the tab's content can take focus.
                 Button("Close") { c.panel = nil }
@@ -116,41 +118,9 @@ private struct ChaptersTab: View {
     }
 }
 
-private struct AudioTab: View {
-    @ObservedObject var c: PlayerController
-    var body: some View {
-        HStack(alignment: .top, spacing: 60.s) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12.s) {
-                    ForEach(c.plan.part?.audioStreams ?? []) { s in
-                        OptionButton(title: s.extendedDisplayTitle, subtitle: detail(s), selected: c.plan.audio?.id == s.id) { c.chooseAudio(s) }
-                    }
-                }
-            }
-            VStack(alignment: .leading, spacing: 12.s) {
-                Text("Speed").font(.caption).foregroundStyle(.secondary)
-                ForEach([Float(0.75), 1, 1.25, 1.5, 2], id: \.self) { r in
-                    OptionButton(title: "\(r)×", selected: c.rate == r) { c.setRate(r) }
-                }
-            }
-            VStack(alignment: .leading, spacing: 8.s) {
-                Text("Output").font(.caption).foregroundStyle(.secondary)
-                Text(AudioSetup.routeDescription).font(.caption)
-                Text("5.1, 7.1 and Dolby Atmos play as Spatial Audio on AirPods.").font(.caption2).foregroundStyle(.secondary)
-            }
-            .frame(width: 420.s, alignment: .leading)
-        }
-    }
-    private func detail(_ s: PlexStream) -> String {
-        var bits: [String] = []
-        if Decide.isAtmos(s) && s.codec == "eac3" { bits.append("Atmos objects with Apple's decoder") }
-        else if s.channels > 2 { bits.append("\(s.channels) ch PCM · Spatial Audio") }
-        if Decide.isLossless(s) { bits.append("lossless") }
-        return bits.joined(separator: " · ")
-    }
-}
-
-private struct SubtitlesTab: View {
+/// Audio on the left (with the file's other versions and the speed under it), subtitles on the right (Off, the
+/// file's tracks, a downloaded one, Search Online… and the delay), and online results beside them after a search.
+private struct TracksTab: View {
     @ObservedObject var c: PlayerController
     @State private var results: [Online.SubtitleResult] = []
     @State private var searching = false
@@ -158,43 +128,84 @@ private struct SubtitlesTab: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 50.s) {
+            audioColumn.disabled(c.adjustingDelay)
+            subtitleColumn
+            if searching || !results.isEmpty || message != nil {
+                VStack(alignment: .leading, spacing: 12.s) {
+                    header("Online")
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12.s) {
+                            if searching { ProgressView() }
+                            if let message { Text(message).font(.caption).foregroundStyle(.secondary).frame(width: 520.s, alignment: .leading) }
+                            ForEach(results) { r in
+                                OptionButton(title: r.title, subtitle: resultDetail(r), selected: false) { Task { await pick(r) } }
+                            }
+                        }
+                        .padding(.vertical, 6.s)
+                    }
+                }
+                .frame(width: 560.s)
+                .disabled(c.adjustingDelay)
+            }
+        }
+    }
+
+    private func header(_ t: String) -> some View {
+        Text(t).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+    }
+
+    private var audioColumn: some View {
+        VStack(alignment: .leading, spacing: 12.s) {
+            header("Audio")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12.s) {
+                    ForEach(c.plan.part?.audioStreams ?? []) { s in
+                        OptionButton(title: Decide.audioTrackTitle(s), subtitle: Decide.audioTrackDetail(s),
+                                     selected: c.plan.audio?.id == s.id) { c.chooseAudio(s) }
+                    }
+                    if c.hasOtherVersions {
+                        header("Version").padding(.top, 14.s)
+                        ForEach(Array(c.item.media.enumerated()), id: \.offset) { i, m in
+                            OptionButton(title: m.label.isEmpty ? "Version \(i + 1)" : m.label,
+                                         selected: c.plan.mediaIndex == i) { c.switchVersion(i) }
+                        }
+                    }
+                    header("Speed").padding(.top, 14.s)
+                    ForEach([Float(0.75), 1, 1.25, 1.5, 2], id: \.self) { r in
+                        OptionButton(title: r == 1 ? "Normal" : "\(r)×", selected: c.rate == r) { c.setRate(r) }
+                    }
+                }
+                .padding(.vertical, 6.s)
+            }
+        }
+        .frame(width: 560.s)
+    }
+
+    private var subtitleColumn: some View {
+        VStack(alignment: .leading, spacing: 12.s) {
+            header("Subtitles")
             ScrollView {
                 VStack(alignment: .leading, spacing: 12.s) {
                     OptionButton(title: "Off", selected: c.plan.subtitle == nil && c.selectedOnlineSubtitle == nil) {
                         Task { await c.select(subtitle: nil) }
                     }
                     ForEach(c.plan.part?.subtitleStreams ?? []) { s in
-                        OptionButton(title: s.extendedDisplayTitle, subtitle: s.isExternal ? "External file" : Decide.isImageSub(s) ? "Image subtitle" : nil,
-                                     selected: c.plan.subtitle?.id == s.id) { Task { await c.select(subtitle: s) } }
+                        OptionButton(title: Decide.subtitleTitle(s), subtitle: Decide.subtitleDetail(s),
+                                     selected: c.selectedOnlineSubtitle == nil && c.plan.subtitle?.id == s.id) { Task { await c.select(subtitle: s) } }
                     }
                     if let name = c.selectedOnlineSubtitle {
-                        OptionButton(title: "Downloaded subtitle", subtitle: name, selected: true) {}
+                        OptionButton(title: "Downloaded", subtitle: name, selected: true) {}
                     }
-                    Button { Task { await search() } } label: { Label("Search Online…", systemImage: "magnifyingglass") }
-                }
-            }
-            .frame(width: 600.s)
-            if searching || !results.isEmpty || message != nil {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12.s) {
-                        if searching { ProgressView() }
-                        if let message { Text(message).font(.caption).foregroundStyle(.secondary) }
-                        ForEach(results) { r in
-                            OptionButton(title: r.title, subtitle: resultDetail(r), selected: false) { Task { await pick(r) } }
-                        }
+                    Button { Task { await search() } } label: {
+                        Label("Search Online…", systemImage: "magnifyingglass").font(.callout).frame(width: 520.s, alignment: .leading)
                     }
                 }
-                .frame(width: 640.s)
+                .padding(.vertical, 6.s)
             }
-            VStack(alignment: .leading, spacing: 12.s) {
-                Text("Delay \(String(format: "%+.1f", c.subtitleDelay)) s").font(.caption)
-                HStack {
-                    Button("−0.1") { c.adjustSubtitleDelay(-0.1) }
-                    Button("+0.1") { c.adjustSubtitleDelay(0.1) }
-                }
-                Button("Reset") { c.adjustSubtitleDelay(-c.subtitleDelay) }
-            }
+            .disabled(c.adjustingDelay)
+            DelayRow(c: c)
         }
+        .frame(width: 560.s)
     }
 
     private func resultDetail(_ r: Online.SubtitleResult) -> String {
@@ -250,6 +261,49 @@ private struct SubtitlesTab: View {
         } catch {
             message = error.localizedDescription
         }
+    }
+}
+
+/// Subtitle delay. On Apple TV a click starts adjusting and ◀ ▶ change it in 0.1 s steps (everything else in the
+/// panel is disabled meanwhile so focus stays put); a click or Menu finishes. Elsewhere: − and + buttons.
+private struct DelayRow: View {
+    @ObservedObject var c: PlayerController
+    private var value: String { String(format: "%+.1f s", c.subtitleDelay) }
+
+    var body: some View {
+        #if os(tvOS)
+        Button { c.adjustingDelay.toggle() } label: {
+            HStack(spacing: 14.s) {
+                Image(systemName: "timer")
+                Text("Delay").font(.callout)
+                Spacer()
+                if c.adjustingDelay {
+                    Text("◀  \(value)  ▶").font(.callout.bold()).monospacedDigit()
+                } else {
+                    Text(value).font(.callout).monospacedDigit().foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 520.s)
+        }
+        .onMoveCommand { d in
+            guard c.adjustingDelay else { return }
+            switch d {
+            case .left: c.adjustSubtitleDelay(-0.1)
+            case .right: c.adjustSubtitleDelay(0.1)
+            default: break
+            }
+        }
+        #else
+        HStack(spacing: 12.s) {
+            Text("Delay \(value)").font(.caption).monospacedDigit()
+            Spacer()
+            Button("−0.1") { c.adjustSubtitleDelay(-0.1) }
+            Button("+0.1") { c.adjustSubtitleDelay(0.1) }
+            Button("Reset") { c.adjustSubtitleDelay(-c.subtitleDelay) }
+        }
+        .buttonStyle(.bordered)
+        .frame(width: 520.s)
+        #endif
     }
 }
 

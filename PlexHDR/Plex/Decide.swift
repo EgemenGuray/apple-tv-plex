@@ -96,6 +96,104 @@ enum Decide {
 
     static func audioLabel(_ s: PlexStream?) -> String { s?.extendedDisplayTitle ?? "None" }
 
+    // MARK: - Track labels for the player's Audio & Subtitles panel
+
+    /// "English", from the stream's language name or code.
+    static func languageName(_ s: PlexStream) -> String {
+        if let l = s.language, !l.isEmpty { return l }
+        if let code = s.languageCode, let name = Locale(identifier: "en").localizedString(forLanguageCode: iso639_1(code) ?? code) { return name }
+        return "Unknown"
+    }
+
+    /// "TrueHD Atmos", "DTS-HD MA", "Dolby Digital+", "AAC".
+    static func audioFormatName(_ s: PlexStream) -> String {
+        let profile = (s.profile ?? "").lowercased()
+        var name: String
+        switch s.codec {
+        case "truehd", "mlp": name = "TrueHD"
+        case "eac3": name = "Dolby Digital+"
+        case "ac3": name = "Dolby Digital"
+        case "aac": name = "AAC"
+        case "flac": name = "FLAC"
+        case "alac": name = "ALAC"
+        case "opus": name = "Opus"
+        case "vorbis": name = "Vorbis"
+        case "mp3": name = "MP3"
+        case "mp2": name = "MP2"
+        default:
+            if isDTS(s) {
+                name = profile.contains("x") ? "DTS:X" : profile.contains("ma") ? "DTS-HD MA" : profile.contains("hra") ? "DTS-HD HRA" : "DTS"
+            } else if s.codec.hasPrefix("pcm") || s.codec == "lpcm" {
+                name = "PCM"
+            } else {
+                name = s.codec.uppercased()
+            }
+        }
+        if isAtmos(s) && name != "DTS:X" { name += " Atmos" }
+        return name
+    }
+
+    static func channelLayoutName(_ channels: Int) -> String? {
+        switch channels {
+        case 0: return nil
+        case 1: return "Mono"
+        case 2: return "Stereo"
+        case 6: return "5.1"
+        case 7: return "6.1"
+        case 8: return "7.1"
+        default: return "\(channels) ch"
+        }
+    }
+
+    static func isCommentary(_ s: PlexStream) -> Bool {
+        "\(s.title ?? "") \(s.extendedDisplayTitle)".lowercased().contains("comment")
+    }
+
+    /// "English · TrueHD Atmos 7.1"
+    static func audioTrackTitle(_ s: PlexStream) -> String {
+        let format = [audioFormatName(s), channelLayoutName(s.channels)].compactMap { $0 }.joined(separator: " ")
+        return "\(languageName(s)) · \(format)"
+    }
+
+    /// "Commentary", or the track's own title when it says something the language and format don't.
+    static func audioTrackDetail(_ s: PlexStream) -> String? {
+        if isCommentary(s) { return "Commentary" }
+        return meaningfulTitle(s)
+    }
+
+    /// "English", "English · Forced", "English · SDH".
+    static func subtitleTitle(_ s: PlexStream) -> String {
+        var bits = [languageName(s)]
+        if s.forced { bits.append("Forced") }
+        if s.hearingImpaired { bits.append("SDH") }
+        if isCommentary(s) { bits.append("Commentary") }
+        return bits.joined(separator: " · ")
+    }
+
+    /// "SRT · External", "PGS", with the track's own title in front when it adds something ("Signs & Songs").
+    static func subtitleDetail(_ s: PlexStream) -> String {
+        let formats = ["srt": "SRT", "subrip": "SRT", "ass": "ASS", "ssa": "SSA", "pgs": "PGS", "hdmv_pgs_subtitle": "PGS",
+                       "vobsub": "VobSub", "dvd_subtitle": "VobSub", "dvb_subtitle": "DVB", "webvtt": "WebVTT", "vtt": "WebVTT",
+                       "mov_text": "Text", "tx3g": "Text", "eia_608": "CC", "eia_708": "CC", "smi": "SAMI"]
+        var bits: [String] = []
+        if let t = meaningfulTitle(s), !isCommentary(s) { bits.append(t) }
+        bits.append(formats[s.codec] ?? s.codec.uppercased())
+        if s.isExternal { bits.append("External") }
+        return bits.joined(separator: " · ")
+    }
+
+    /// The stream's title unless it only repeats the language, the format or the flags.
+    private static func meaningfulTitle(_ s: PlexStream) -> String? {
+        guard let t = s.title?.trimmingCharacters(in: .whitespaces), !t.isEmpty else { return nil }
+        let noise = [languageName(s).lowercased(), s.languageCode?.lowercased() ?? "", s.codec, "forced", "sdh", "cc", "full", "default",
+                     "subtitles", "subtitle", "subs", "audio", "stereo", "mono", "surround", "5.1", "7.1", "2.0", "atmos", "truehd",
+                     "dolby", "digital", "plus", "dts-hd", "dts", "ma", "hd", "aac", "ac3", "eac3", "dd+", "dd", "flac", "pcm", "srt",
+                     "pgs", "ass", "lossless", "hearing", "impaired"]
+        let words = t.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "+" && $0 != "-" && $0 != "." })
+        let leftover = words.map(String.init).filter { !noise.contains($0) }.joined()
+        return leftover.filter { $0.isLetter || $0.isNumber }.count >= 2 ? t : nil
+    }
+
     /// Ranks tracks of one language: lossless first, then Atmos, then channel count.
     private static func quality(_ s: PlexStream) -> Int {
         (isLossless(s) ? 1000 : 0) + (isAtmos(s) ? 100 : 0) + s.channels

@@ -25,9 +25,9 @@ final class PlayerOptions: KSOptions {
 
 @MainActor
 final class PlayerController: ObservableObject {
-    enum Panel: String, CaseIterable, Identifiable { case info, chapters, audio, subtitles, picture
+    enum Panel: String, CaseIterable, Identifiable { case tracks, chapters, picture, info
         var id: String { rawValue }
-        var title: String { rawValue.capitalized }
+        var title: String { self == .tracks ? "Audio & Subtitles" : rawValue.capitalized }
     }
     enum Fit: String, CaseIterable, Identifiable { case fit, fill, stretch
         var id: String { rawValue }
@@ -51,6 +51,14 @@ final class PlayerController: ObservableObject {
     @Published private(set) var upNext: PlexItem?
     @Published private(set) var upNextCountdown = 10
     @Published private(set) var error: String?
+    /// A passing message (a subtitle that couldn't load) while playback carries on.
+    @Published private(set) var notice: String?
+    /// ◀ ▶ presses while playing add up here and seek once (shown as "+90 s").
+    @Published private(set) var pendingSkip: TimeInterval?
+    /// The Siri Remote's touch surface is moving the scrub head.
+    @Published private(set) var touchScrubbing = false
+    /// The subtitle delay row takes ◀ ▶ (Apple TV).
+    @Published var adjustingDelay = false
     @Published private(set) var subtitleDelay: Double = 0
     @Published private(set) var rate: Float = 1
     @Published var fit: Fit = .fit { didSet { layer?.player.contentMode = fit.mode } }
@@ -66,6 +74,11 @@ final class PlayerController: ObservableObject {
     private var countdownTask: Task<Void, Never>?
     private var scrubStep: TimeInterval = 10
     private var lastScrubMove = Date.distantPast
+    private var skipTask: Task<Void, Never>?
+    private var noticeTask: Task<Void, Never>?
+    private var touchScrubAnchor: TimeInterval = 0
+    private var touchScrubEnded = Date.distantPast
+    private var lastNowPlaying = Date.distantPast
     private var upNextDismissed = false
     private var introSkipped = Set<Double>()
     private var nextEpisode: PlexItem?
@@ -89,6 +102,7 @@ final class PlayerController: ObservableObject {
 
     func start(at startAt: TimeInterval?) {
         let start = startAt ?? TitleMemory.shared.resumePosition(item)
+        activateNowPlaying()
         open(at: start)
         Task { await loadExtras() }
         hideOverlaySoon()
@@ -101,7 +115,8 @@ final class PlayerController: ObservableObject {
         o.matchDisplay = settings.matchFrameRate
         o.autoSelectEmbedSubtitle = false
         o.isAccurateSeek = true
-        o.registerRemoteControll = true
+        // The app publishes Now Playing and handles the remote commands itself (NowPlaying), with its skip settings.
+        o.registerRemoteControll = false
         switch plan.engine {
         case .ffmpeg: o.playerTypes = [KSMEPlayer.self]
         case .apple, .appleRemux: o.playerTypes = [KSAVPlayer.self, KSMEPlayer.self]
@@ -143,8 +158,14 @@ final class PlayerController: ObservableObject {
     }
 
     private func loadExtras() async {
-        if let part = plan.part, let data = await PlexClient.shared.previewIndex(part) { bif = BIF(data) }
+        await loadBIF()
         if item.type == "episode", let sk = item.grandparentRatingKey { show = try? await PlexClient.shared.metadata(sk) }
+    }
+
+    private func loadBIF() async {
+        let part = plan.part
+        guard let part, let data = await PlexClient.shared.previewIndex(part) else { return }
+        if plan.part?.id == part.id { bif = BIF(data) }
     }
 
     // MARK: - Delegate events
@@ -158,6 +179,7 @@ final class PlayerController: ObservableObject {
             applyTracksAfterOpen()
         }
         if s == .paused || s == .buffering { reportTimeline(force: true) }
+        publishNowPlaying()
     }
 
     private func timeChanged(_ current: TimeInterval, _ total: TimeInterval) {
@@ -167,6 +189,7 @@ final class PlayerController: ObservableObject {
         if duration <= 0, let d = item.durationMs { duration = Double(d) / 1000 }
         reportTimeline(force: false)
         checkMarkers()
+        if Date().timeIntervalSince(lastNowPlaying) > 5 { publishNowPlaying() }
     }
     private var remuxOffset: TimeInterval = 0
     /// Last resort on iPhone/iPad when AVPlayer refuses the server's HEVC stream.
@@ -277,14 +300,14 @@ final class PlayerController: ObservableObject {
         // External files, and on iPhone/iPad embedded text tracks too, come from the server as files.
         guard let url = PlexClient.shared.subtitleURL(s) ?? PlexClient.shared.streamFileURL(s) else { return }
         if !Platform.hasFFmpeg, Decide.isImageSub(s) {
-            error = "Image subtitles (PGS/VobSub) can't be shown on this device. Search online in Subtitles for a text version."
+            show(notice: "Image subtitles (PGS/VobSub) can't be shown on this device. Search online in Subtitles for a text version."
             return
         }
         do {
             let local = try await downloadPlexSubtitle(url, stream: s)
             addAndSelect(URLSubtitleInfo(subtitleID: "plex-\(s.id)", name: s.extendedDisplayTitle, url: local, languageCode: s.languageCode))
         } catch {
-            self.error = "Couldn't load the subtitle: \(error.localizedDescription)"
+            show(notice: "Couldn't load the subtitle: \(error.localizedDescription)")
         }
     }
 
@@ -326,6 +349,62 @@ final class PlayerController: ObservableObject {
     func setRate(_ r: Float) {
         rate = r
         layer?.player.playbackRate = r
+        publishNowPlaying()
+    }
+
+    private func show(notice text: String) {
+        notice = text
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            withAnimation { self.notice = nil }
+        }
+    }
+
+    // MARK: - Versions and errors
+
+    var hasOtherVersions: Bool { item.media.count > 1 }
+
+    /// Plays another file of the same title from the same point, keeping the audio and subtitle languages.
+    func switchVersion(_ index: Int) {
+        guard item.media.indices.contains(index), index != plan.mediaIndex || error != nil else { return }
+        let at = time
+        TitleMemory.shared.update(item) { $0.mediaIndex = index }
+        if let s = transcodeSession { Task { await PlexClient.shared.stopTranscode(s) } }
+        plan = carryLanguages(item, mediaIndex: index)
+        bif = nil; remuxOffset = 0; remuxH264 = false; openRetries = 0
+        selectedOnlineSubtitle = nil
+        open(at: at)
+        Task { await loadBIF() }
+        showOverlay(autoHide: true)
+    }
+
+    /// The version after the current one (for the error screen).
+    func tryOtherVersion() {
+        guard hasOtherVersions else { return }
+        switchVersion((plan.mediaIndex + 1) % item.media.count)
+    }
+
+    /// Opens the same file again from where it stopped.
+    func retry() {
+        openRetries = 0
+        if let s = transcodeSession { Task { await PlexClient.shared.stopTranscode(s) } }
+        open(at: time)
+    }
+
+    /// A plan for an item (or another version of it) with the current audio and subtitle languages.
+    private func carryLanguages(_ next: PlexItem, mediaIndex: Int = 0) -> Decide.Plan {
+        let subLang = plan.subtitle?.languageCode
+        let audioLang = plan.audio?.languageCode
+        var p = Decide.plan(next, mediaIndex: mediaIndex, settings: settings)
+        if let audioLang, let a = p.part?.audioStreams.first(where: { Decide.sameLang($0.languageCode, audioLang) }), p.audio?.languageCode != a.languageCode {
+            p = Decide.plan(next, mediaIndex: mediaIndex, audioId: a.id, settings: settings)
+        }
+        if let subLang, let s = p.part?.subtitleStreams.first(where: { Decide.sameLang($0.languageCode, subLang) && !$0.forced }) {
+            p = Decide.plan(next, mediaIndex: mediaIndex, audioId: p.audio?.id, subtitleId: .some(s.id), settings: settings)
+        }
+        return p
     }
 
     #if KSPLAYER
@@ -363,7 +442,18 @@ final class PlayerController: ObservableObject {
 
     func togglePlay() {
         guard let layer else { return }
+        flushSkip()
         if isPlaying { layer.pause(); showOverlay(autoHide: false) } else { layer.play(); hideOverlaySoon() }
+    }
+
+    func play() {
+        guard let layer, !isPlaying else { return }
+        layer.play(); hideOverlaySoon()
+    }
+
+    func pause() {
+        guard let layer, isPlaying else { return }
+        layer.pause(); showOverlay(autoHide: false)
     }
 
     func seek(to t: TimeInterval) {
@@ -377,12 +467,80 @@ final class PlayerController: ObservableObject {
         }
         time = target
         layer?.seek(time: target, autoPlay: true)
+        publishNowPlaying()
     }
 
     func skip(_ seconds: TimeInterval) {
         seek(to: time + seconds)
         showOverlay(autoHide: true)
     }
+
+    /// ◀ ▶ while playing: presses within ~600 ms add up ("+90 s") and the player seeks once, instead of re-seeking
+    /// (and re-buffering) on every press.
+    func queueSkip(_ seconds: TimeInterval) {
+        let total = (pendingSkip ?? 0) + seconds
+        let target = max(0, min(duration > 0 ? duration - 1 : .infinity, time + total))
+        pendingSkip = target - time
+        showOverlay(autoHide: false)
+        skipTask?.cancel()
+        skipTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.flushSkip()
+        }
+    }
+
+    /// Seeks to the accumulated skip now (also before play/pause and clicks).
+    func flushSkip() {
+        skipTask?.cancel()
+        guard let s = pendingSkip else { return }
+        pendingSkip = nil
+        if abs(s) >= 1 { seek(to: time + s) }
+        showOverlay(autoHide: true)
+    }
+
+    func cancelSkip() {
+        skipTask?.cancel()
+        pendingSkip = nil
+        hideOverlaySoon()
+    }
+
+    /// Where the timeline shows the play head: the scrub head, the accumulated skip target, or the current time.
+    var displayTime: TimeInterval {
+        if let s = scrubTime { return s }
+        if let p = pendingSkip { return max(0, min(duration, time + p)) }
+        return time
+    }
+
+    // MARK: - Siri Remote touch surface
+
+    /// A horizontal pan on the touch surface scrubs while paused, while scrubbing, or while the timeline is showing.
+    var canTouchScrub: Bool {
+        panel == nil && error == nil && upNext == nil && pendingSkip == nil && duration > 0
+            && (!isPlaying || scrubTime != nil || overlayVisible)
+    }
+
+    func beginTouchScrub() {
+        flushSkip()
+        touchScrubAnchor = scrubTime ?? time
+        touchScrubbing = true
+        scrub(to: touchScrubAnchor)
+    }
+
+    /// `fraction` is the pan's horizontal travel as a share of the surface's width.
+    func moveTouchScrub(fraction: Double) {
+        // A full swipe covers a third of the title (at least ten minutes), so short swipes give fine control.
+        let span = max(600, duration / 3)
+        scrub(to: touchScrubAnchor + fraction * span)
+    }
+
+    func endTouchScrub() {
+        touchScrubbing = false
+        touchScrubEnded = Date()
+    }
+
+    /// The swipe that moved the scrub head also arrives as a move command when it ends; ignore that one.
+    var touchScrubJustEnded: Bool { touchScrubbing || Date().timeIntervalSince(touchScrubEnded) < 0.5 }
 
     /// While paused (or already scrubbing), ◀ ▶ move a scrub head with preview thumbnails; holding speeds up.
     func scrub(_ direction: Int) {
@@ -397,10 +555,11 @@ final class PlayerController: ObservableObject {
     func commitScrub() {
         if let t = scrubTime { seek(to: t) }
         scrubTime = nil
+        touchScrubbing = false
         hideOverlaySoon()
     }
 
-    func cancelScrub() { scrubTime = nil }
+    func cancelScrub() { scrubTime = nil; touchScrubbing = false }
 
     /// Touch and mouse: dragging the timeline moves the scrub head to a point.
     func scrub(to t: TimeInterval) {
@@ -437,7 +596,7 @@ final class PlayerController: ObservableObject {
         hideTask?.cancel()
         hideTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 5_000_000_000)
-            guard let self, !Task.isCancelled, self.isPlaying, self.panel == nil, self.scrubTime == nil else { return }
+            guard let self, !Task.isCancelled, self.isPlaying, self.panel == nil, self.scrubTime == nil, self.pendingSkip == nil else { return }
             withAnimation(.easeOut(duration: 0.4)) { self.overlayVisible = false }
         }
     }
@@ -498,22 +657,16 @@ final class PlayerController: ObservableObject {
     /// Plays another item in the same player. The subtitle language carries over to the next episode.
     func play(_ next: PlexItem) {
         countdownTask?.cancel()
+        skipTask?.cancel(); pendingSkip = nil
         saveProgress(stopped: true)
-        let subLang = plan.subtitle?.languageCode
-        let audioLang = plan.audio?.languageCode
+        plan = carryLanguages(next)
         item = next
-        var p = Decide.plan(next, settings: settings)
-        if let audioLang, let a = p.part?.audioStreams.first(where: { Decide.sameLang($0.languageCode, audioLang) }), p.audio?.languageCode != a.languageCode {
-            p = Decide.plan(next, audioId: a.id, settings: settings)
-        }
-        if let subLang, let s = p.part?.subtitleStreams.first(where: { Decide.sameLang($0.languageCode, subLang) && !$0.forced }) {
-            p = Decide.plan(next, audioId: p.audio?.id, subtitleId: .some(s.id), settings: settings)
-        }
-        plan = p
         upNext = nil; upNextDismissed = false; nextEpisode = nil; nextLoaded = false
         introMarker = nil; introSkipped = []; bif = nil; time = 0; remuxOffset = 0; remuxH264 = false
         duration = Double(next.durationMs ?? 0) / 1000
         selectedOnlineSubtitle = nil
+        publishNowPlaying()
+        NowPlaying.shared.setArtwork(owner: self, url: artworkURL)
         open(at: TitleMemory.shared.resumePosition(next))
         Task { await loadExtras() }
         showOverlay(autoHide: true)
@@ -543,9 +696,37 @@ final class PlayerController: ObservableObject {
         saveProgress(stopped: true)
         countdownTask?.cancel()
         hideTask?.cancel()
+        skipTask?.cancel()
+        noticeTask?.cancel()
+        NowPlaying.shared.clear(owner: self)
         layer?.delegate = nil
         layer?.stop()
         onClose?()
+    }
+
+    // MARK: - Now Playing
+
+    private var artworkURL: URL? { PlexClient.shared.imageURL(item.thumb ?? item.posterPath, width: 600, height: 600) }
+
+    private func activateNowPlaying() {
+        NowPlaying.shared.activate(owner: self, handlers: .init(
+            play: { [weak self] in self?.play() },
+            pause: { [weak self] in self?.pause() },
+            toggle: { [weak self] in self?.togglePlay() },
+            skip: { [weak self] s in self?.skip(s) },
+            seek: { [weak self] t in self?.seek(to: t); self?.showOverlay(autoHide: true) }
+        ))
+        publishNowPlaying()
+        NowPlaying.shared.setArtwork(owner: self, url: artworkURL)
+    }
+
+    private func publishNowPlaying() {
+        lastNowPlaying = Date()
+        let episode = item.type == "episode"
+        let title = item.title
+        let subtitle = episode ? [item.grandparentTitle, item.episodeLabel].compactMap { $0 }.joined(separator: " · ") : item.year.map(String.init)
+        NowPlaying.shared.update(owner: self, .init(title: title, subtitle: subtitle, duration: duration, elapsed: time,
+                                                    rate: isPlaying ? rate : 0))
     }
 
     // MARK: - Info
