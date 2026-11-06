@@ -12,6 +12,10 @@ struct LumenApp: App {
 
     init() {
         AudioSetup.configure()
+        #if os(macOS)
+        // The View menu gets our own Toggle Full Screen (⌃⌘F) instead of AppKit's automatic item.
+        UserDefaults.standard.set(false, forKey: "NSFullScreenMenuItemEverywhere")
+        #endif
         if AppSettings.shared.introAnimation && AppSettings.shared.introSound { IntroChime.prepare() }
         #if KSPLAYER
         // The app's own FFmpeg player for everything (like Infuse). It decodes every audio codec to multichannel PCM,
@@ -52,6 +56,9 @@ struct LumenApp: App {
         .onChange(of: phase) { _, p in
             if p != .active { TitleMemory.shared.flush() }
         }
+        #if os(macOS)
+        .commands { LumenCommands() }
+        #endif
     }
 }
 

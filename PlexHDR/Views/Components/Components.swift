@@ -136,6 +136,8 @@ struct ItemRow: View {
     let title: String
     let items: [PlexItem]
     var wide = false
+    /// The Continue Watching row: its cards can be removed from it.
+    var onDeck = false
     var onFocus: ((PlexItem) -> Void)?
 
     var body: some View {
@@ -144,7 +146,7 @@ struct ItemRow: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 40.s) {
                     ForEach(items) { item in
-                        ItemLink(item: item, onFocus: onFocus) {
+                        ItemLink(item: item, onDeck: onDeck, onFocus: onFocus) {
                             if wide { WideCard(item: item) } else { PosterCard(item: item) }
                         }
                     }
@@ -160,6 +162,7 @@ struct ItemRow: View {
 /// A card that opens the right screen for its item and reports focus (for the backdrop cross-fade).
 struct ItemLink<Label: View>: View {
     let item: PlexItem
+    var onDeck = false
     var onFocus: ((PlexItem) -> Void)?
     @ViewBuilder let label: () -> Label
     @FocusState private var focused: Bool
@@ -169,7 +172,102 @@ struct ItemLink<Label: View>: View {
             .buttonStyle(LiftButtonStyle())
             .focused($focused)
             .onChange(of: focused) { _, f in if f { onFocus?(item) } }
+            .plexCardMenu(item, onDeck: onDeck)
     }
+}
+
+// MARK: - Card menu
+
+private struct PushRouteKey: EnvironmentKey { static let defaultValue: ((Route) -> Void)? = nil }
+private struct CardChangedKey: EnvironmentKey { static let defaultValue: ((PlexItem) -> Void)? = nil }
+
+extension EnvironmentValues {
+    /// Opens a screen in the current tab's navigation stack (set by `PlexStack`).
+    var pushRoute: ((Route) -> Void)? {
+        get { self[PushRouteKey.self] }
+        set { self[PushRouteKey.self] = newValue }
+    }
+    /// Called after a card's menu changed an item (watched state, Continue Watching), so the screen can reload it.
+    var cardChanged: ((PlexItem) -> Void)? {
+        get { self[CardChangedKey.self] }
+        set { self[CardChangedKey.self] = newValue }
+    }
+}
+
+/// A tab's navigation stack with a path, so card menus can open the show or season.
+struct PlexStack<Root: View>: View {
+    @ViewBuilder let root: () -> Root
+    @State private var path = NavigationPath()
+
+    var body: some View {
+        NavigationStack(path: $path) { root().withRoutes() }
+            .environment(\.pushRoute, { route in path.append(route) })
+    }
+}
+
+/// Press and hold (Siri Remote), right-click or long-press on a Plex card.
+private struct PlexCardMenu: ViewModifier {
+    let item: PlexItem
+    let onDeck: Bool
+    @Environment(\.pushRoute) private var push
+    @Environment(\.cardChanged) private var changed
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if ["movie", "episode", "show", "season"].contains(item.type) {
+            content.contextMenu { menu }
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder private var menu: some View {
+        let started = item.viewOffsetMs > 0 && item.isPlayable
+        Button { PlayerPresenter.shared.play(item) } label: {
+            Label(started ? "Resume" : "Play", systemImage: "play.fill")
+        }
+        if started {
+            Button { PlayerPresenter.shared.play(item, from: 0) } label: {
+                Label("Play from Beginning", systemImage: "backward.end.fill")
+            }
+        }
+        Button {
+            Task {
+                await PlexClient.shared.setWatched(item, !item.isWatched)
+                changed?(item)
+            }
+        } label: {
+            Label(item.isWatched ? "Mark Unwatched" : "Mark Watched", systemImage: item.isWatched ? "circle" : "checkmark.circle")
+        }
+        if onDeck, let rk = item.ratingKey {
+            Button {
+                Task {
+                    await PlexClient.shared.removeFromContinueWatching(ratingKey: rk)
+                    changed?(item)
+                }
+            } label: { Label("Remove from Continue Watching", systemImage: "minus.circle") }
+        }
+        if push != nil {
+            if item.type == "episode", let show = item.grandparentRatingKey {
+                Button { open(show) } label: { Label("Go to Show", systemImage: "tv") }
+            }
+            if item.type == "episode", let season = item.parentRatingKey {
+                Button { open(season) } label: { Label("Go to Season", systemImage: "list.number") }
+            }
+            if item.type == "season", let show = item.parentRatingKey {
+                Button { open(show) } label: { Label("Go to Show", systemImage: "tv") }
+            }
+        }
+    }
+
+    private func open(_ ratingKey: String) {
+        Task {
+            if let m = try? await PlexClient.shared.metadata(ratingKey) { push?(.item(m)) }
+        }
+    }
+}
+
+extension View {
+    func plexCardMenu(_ item: PlexItem, onDeck: Bool = false) -> some View { modifier(PlexCardMenu(item: item, onDeck: onDeck)) }
 }
 
 /// Apple TV-style focus: the card lifts, grows and casts a shadow.

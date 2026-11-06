@@ -29,6 +29,8 @@ final class IPTVStore: ObservableObject {
     @Published private(set) var recents: [String] = []
     @Published private(set) var hiddenGroups: Set<String> = []
     @Published private(set) var lockedGroups: Set<String> = []
+    /// Favourite groups, in the user's order; they are listed first.
+    @Published private(set) var favoriteGroups: [String] = []
     @Published private(set) var renames: [String: String] = [:]
     @Published private(set) var reminders: [IPTVReminder] = []
     @Published private(set) var pin = ""
@@ -61,6 +63,7 @@ final class IPTVStore: ObservableObject {
         recents = d.stringArray(forKey: "iptv.recents") ?? []
         hiddenGroups = Set(d.stringArray(forKey: "iptv.hidden") ?? [])
         lockedGroups = Set(d.stringArray(forKey: "iptv.locked") ?? [])
+        favoriteGroups = d.stringArray(forKey: "iptv.favoriteGroups") ?? []
         renames = (d.dictionary(forKey: "iptv.renames") as? [String: String]) ?? [:]
         reminders = decode([IPTVReminder].self, "iptv.reminders") ?? []
         pin = d.string(forKey: "iptv.pin") ?? ""
@@ -258,6 +261,63 @@ final class IPTVStore: ObservableObject {
             }
         }
         return out
+    }
+
+    /// Every group the sources provide, favourites first in the user's order, then A–Z.
+    func sortedGroups(_ kind: IPTVGroup.Kind) -> [IPTVGroup] {
+        let all = groups(kind)
+        let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let favs = favoriteGroups.compactMap { byID[$0] }
+        let favIDs = Set(favs.map(\.id))
+        let rest = all.filter { !favIDs.contains($0.id) }
+            .map { ($0, groupSortKey($0.name)) }
+            .sorted { a, b in
+                let r = a.1.compare(b.1, options: [.numeric])
+                return r == .orderedSame ? a.0.id < b.0.id : r == .orderedAscending
+            }
+            .map(\.0)
+        return favs + rest
+    }
+
+    /// A group's name folded for sorting and the A–Z index, without leading symbols such as "|", "★" or "[".
+    func groupSortKey(_ name: String) -> String {
+        if let k = sortKeys[name] { return k }
+        let f = name.searchFolded
+        let k = String(f.drop { !$0.isLetter && !$0.isNumber })
+        sortKeys[name] = k.isEmpty ? f : k
+        return sortKeys[name] ?? f
+    }
+    private var sortKeys: [String: String] = [:]
+
+    func isFavoriteGroup(_ g: IPTVGroup) -> Bool { favoriteGroups.contains(g.id) }
+
+    func toggleFavoriteGroup(_ g: IPTVGroup) {
+        if let i = favoriteGroups.firstIndex(of: g.id) { favoriteGroups.remove(at: i) } else { favoriteGroups.append(g.id) }
+        d.set(favoriteGroups, forKey: "iptv.favoriteGroups")
+    }
+
+    enum GroupMove { case up, down, top }
+
+    /// Moves a favourite group among the favourites that are shown.
+    func moveFavoriteGroup(_ g: IPTVGroup, _ m: GroupMove) {
+        let shown = Set(groups(g.kind).map(\.id))
+        var visible = favoriteGroups.filter { shown.contains($0) }
+        guard let i = visible.firstIndex(of: g.id) else { return }
+        switch m {
+        case .up: if i > 0 { visible.swapAt(i, i - 1) }
+        case .down: if i < visible.count - 1 { visible.swapAt(i, i + 1) }
+        case .top: visible.remove(at: i); visible.insert(g.id, at: 0)
+        }
+        // Favourites of other kinds or of sources that are off keep their places after the shown ones.
+        favoriteGroups = visible + favoriteGroups.filter { !shown.contains($0) }
+        d.set(favoriteGroups, forKey: "iptv.favoriteGroups")
+    }
+
+    func canMoveFavoriteGroup(_ g: IPTVGroup, _ m: GroupMove) -> Bool {
+        let shown = Set(groups(g.kind).map(\.id))
+        let visible = favoriteGroups.filter { shown.contains($0) }
+        guard let i = visible.firstIndex(of: g.id) else { return false }
+        return m == .down ? i < visible.count - 1 : i > 0
     }
 
     func isHidden(_ g: IPTVGroup) -> Bool { hiddenGroups.contains(g.id) }

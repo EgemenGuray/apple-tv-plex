@@ -3,23 +3,26 @@ import KSPlayer
 #endif
 import SwiftUI
 
-/// The IPTV sections. With Plex they sit under one "Live TV" tab with a section bar; in IPTV-only mode each one
-/// is its own tab.
+/// The IPTV sections. In Live TV mode each one is its own tab. Downloads are shown inside Recordings; the case
+/// stays for its own search text.
 enum IPTVSection: String, CaseIterable, Identifiable {
-    case home, live, guide, movies, series, favorites, search, downloads, recordings, playlists
+    case home, live, guide, movies, series, favorites, search, recordings, playlists, settings, downloads
     var id: String { rawValue }
+    /// The tabs, in order.
+    static let tabs: [IPTVSection] = [.home, .live, .guide, .movies, .series, .favorites, .search, .recordings, .playlists, .settings]
     var title: String {
         switch self {
         case .home: return "Home"
         case .live: return "Live TV"
-        case .guide: return "TV Guide"
+        case .guide: return "Guide"
         case .movies: return "Movies"
         case .series: return "Series"
         case .favorites: return "Favorites"
         case .search: return "Search"
         case .downloads: return "Downloads"
         case .recordings: return "Recordings"
-        case .playlists: return "Playlists"
+        case .playlists: return "Sources"
+        case .settings: return "Settings"
         }
     }
     var symbol: String {
@@ -34,8 +37,11 @@ enum IPTVSection: String, CaseIterable, Identifiable {
         case .downloads: return "arrow.down.circle"
         case .recordings: return "record.circle"
         case .playlists: return "list.bullet.rectangle"
+        case .settings: return "gearshape"
         }
     }
+    /// Works without any source added.
+    var needsNoSource: Bool { [.playlists, .downloads, .recordings, .settings].contains(self) }
 }
 
 enum IPTVRoute: Hashable {
@@ -54,37 +60,6 @@ extension View {
     }
 }
 
-/// One tab holding every IPTV section behind a section bar.
-struct IPTVHome: View {
-    @AppStorage("iptv.section") private var sectionRaw = IPTVSection.home.rawValue
-    @ObservedObject private var store = IPTVStore.shared
-
-    private var section: IPTVSection { IPTVSection(rawValue: sectionRaw) ?? .live }
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 0) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 18.s) {
-                        ForEach(IPTVSection.allCases) { s in
-                            Button { sectionRaw = s.rawValue } label: {
-                                Label(s.title, systemImage: s.symbol).font(.callout.weight(.semibold))
-                                    .padding(.horizontal, 26.s).padding(.vertical, 12.s)
-                            }
-                            .buttonStyle(PillStyle(selected: s == section))
-                        }
-                    }
-                    .padding(.horizontal, 60.s).padding(.vertical, 20.s)
-                }
-                .scrollClipDisabled()
-                .tvFocusSection()
-                IPTVSectionView(section: section)
-            }
-            .iptvRoutes()
-        }
-    }
-}
-
 /// One section, or the first-run screen when no playlist has been added.
 struct IPTVSectionView: View {
     let section: IPTVSection
@@ -92,7 +67,7 @@ struct IPTVSectionView: View {
 
     var body: some View {
         Group {
-            if !store.hasSources && section != .playlists && section != .downloads && section != .recordings {
+            if !store.hasSources && !section.needsNoSource {
                 IPTVWelcome()
             } else {
                 switch section {
@@ -104,8 +79,9 @@ struct IPTVSectionView: View {
                 case .favorites: IPTVFavoritesView()
                 case .search: IPTVSearchView()
                 case .downloads: JobsView(kind: .download)
-                case .recordings: JobsView(kind: .recording)
-                case .playlists: PlaylistsView()
+                case .recordings: RecordingsView()
+                case .playlists: PlaylistsView(part: .sources)
+                case .settings: PlaylistsView(part: .settings)
                 }
             }
         }
@@ -127,31 +103,6 @@ struct IPTVWelcome: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
         .sheet(isPresented: $adding) { PlaylistEditor(playlist: nil) }
-    }
-}
-
-/// IPTV without Plex: a Live TV tab (with the section bar) and a Plex tab.
-struct IPTVOnlyTabs: View {
-    @State private var tab = "live"
-    var body: some View {
-        TabView(selection: $tab) {
-            IPTVHome()
-                .tabItem { Label("Live TV", systemImage: "tv") }.tag("live")
-            NavigationStack { PlexLinkView() }
-                .tabItem { Label("Plex", systemImage: "server.rack") }.tag("plex")
-        }
-    }
-}
-
-/// From IPTV-only mode back to signing in to Plex.
-struct PlexLinkView: View {
-    @ObservedObject private var store = IPTVStore.shared
-    var body: some View {
-        VStack(spacing: 30.s) {
-            Text("Lumen also plays your Plex library.").font(.title3)
-            Button("Sign in to Plex") { store.iptvOnly = false }.buttonStyle(.borderedProminent)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

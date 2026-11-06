@@ -18,12 +18,12 @@ struct HomeView: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 30.s) {
                     if !shelf.isEmpty {
-                        TopShelf(items: shelf, index: $heroIndex)
+                        TopShelf(items: shelf, index: $heroIndex, autoAdvance: focusedItem == nil) { focusedItem = nil }
                             .frame(height: 840.s)
                             .onChange(of: heroIndex) { _, _ in focusedItem = nil }
                     }
                     if !continueWatching.isEmpty {
-                        ItemRow(title: "Continue Watching", items: continueWatching, wide: true) { focusedItem = $0 }
+                        ItemRow(title: "Continue Watching", items: continueWatching, wide: true, onDeck: true) { focusedItem = $0 }
                     }
                     ForEach(recent) { row in
                         ItemRow(title: "Recently Added in \(row.section.title)", items: row.items) { focusedItem = $0 }
@@ -38,6 +38,7 @@ struct HomeView: View {
         .ignoresSafeArea(edges: .top)
         .task { if !loaded { await load() } }
         .onChange(of: presenter.playbackEnded) { _, _ in Task { await load() } }
+        .environment(\.cardChanged, { _ in Task { await load() } })
     }
 
     private func load() async {
@@ -67,10 +68,15 @@ struct HomeView: View {
 }
 
 /// Full-screen top shelf: artwork, logo, metadata, summary and Play / More Info. Moves to the next title every 9 s
-/// while you rest on it; ◀ ▶ past the buttons flips between titles.
+/// while it is on screen and its buttons don't have focus (so it never changes under you while you read it);
+/// ◀ ▶ past the buttons flips between titles.
 struct TopShelf: View {
     let items: [PlexItem]
     @Binding var index: Int
+    /// False while a row below has focus (the backdrop then shows that row's title).
+    var autoAdvance = true
+    /// The shelf's buttons got focus.
+    var onFocus: () -> Void = {}
     @EnvironmentObject private var presenter: PlayerPresenter
     @State private var details: [String: PlexItem] = [:]
     @State private var ratings: Online.Ratings?
@@ -132,9 +138,10 @@ struct TopShelf: View {
             ratings = nil
             ratings = await Online.shared.ratings(details[item.id] ?? item)
         }
-        .task(id: "\(index)-\(focus != nil)") {
-            // Auto-advance only while the shelf has focus, like the Apple TV app.
-            guard focus != nil || !Platform.isTV, items.count > 1 else { return }
+        .onChange(of: focus) { _, f in if f != nil { onFocus() } }
+        .task(id: "\(index)-\(focus != nil)-\(autoAdvance)") {
+            // Pause while Play / More Info have focus, and while a row below is being browsed.
+            guard focus == nil, autoAdvance, items.count > 1 else { return }
             try? await Task.sleep(nanoseconds: 9_000_000_000)
             if !Task.isCancelled { flip(1) }
         }

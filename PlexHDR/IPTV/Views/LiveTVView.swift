@@ -11,8 +11,25 @@ struct LiveTVView: View {
     @State private var pendingGroup: String?
     @State private var tagFilter: Set<IPTVTag> = []
     @ObservedObject private var sq = IPTVSectionSearch.shared
+    /// The A–Z strip beside the groups (Apple TV: opened with ◀; elsewhere always shown).
+    @State private var letterStrip = false
+    /// The group the strip was opened from, to go back to with ▶ or Menu.
+    @State private var stripFrom: String?
+    @State private var scrollTarget: String?
+    @State private var showGroups = false
+    @FocusState private var groupFocus: String?
+    @FocusState private var letterFocus: String?
 
-    private var groups: [IPTVGroup] { store.groups(.live) }
+    private static let letters = ["#"] + "ABCDEFGHIJKLMNOPQRSTUVWXYZ".map { String($0) }
+
+    /// Every group, favourites first, then A–Z.
+    private var groups: [IPTVGroup] { store.sortedGroups(.live) }
+
+    /// The groups the search matches, or all of them.
+    private var shownGroups: [IPTVGroup] {
+        let all = groups
+        return sq.active(.live) ? all.filter { sq.hits(.live, $0.name) } : all
+    }
 
     private var lineup: [IPTVChannel] {
         var list: [IPTVChannel]
@@ -26,7 +43,7 @@ struct LiveTVView: View {
         case "favorites": list = store.favoriteChannels
         case "recents": list = store.recentChannels
         default:
-            if let g = groups.first(where: { $0.id == groupKey }) { list = store.channels(in: g) } else { list = store.channels }
+            if let g = store.groups(.live).first(where: { $0.id == groupKey }) { list = store.channels(in: g) } else { list = store.channels }
         }
         if !tagFilter.isEmpty { list = list.filter { tagFilter.isSubset(of: store.tags($0)) } }
         return list
@@ -38,7 +55,7 @@ struct LiveTVView: View {
         case "all": return "All Channels"
         case "favorites": return "Favorites"
         case "recents": return "Recently Watched"
-        default: return groups.first { $0.id == groupKey }?.name ?? "All Channels"
+        default: return store.groups(.live).first { $0.id == groupKey }?.name ?? "All Channels"
         }
     }
 
@@ -48,17 +65,29 @@ struct LiveTVView: View {
             if Platform.isPhone {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Menu {
-                            groupMenuItems
-                        } label: {
-                            Label(groupTitle, systemImage: "line.3.horizontal.decrease.circle").font(.headline)
+                        Button { showGroups = true } label: {
+                            Label(groupTitle, systemImage: "line.3.horizontal.decrease.circle").font(.headline).lineLimit(1)
                         }
                         Spacer()
                     }
                     .padding(.horizontal)
-                    SectionSearchField(section: .live, prompt: "channels and what's on").padding(.horizontal)
+                    SectionSearchField(section: .live, prompt: "groups, channels and what's on").padding(.horizontal)
                     tagBar
                     ChannelList(channels: list, focused: $focused)
+                }
+                .sheet(isPresented: $showGroups) {
+                    NavigationStack {
+                        VStack(spacing: 10) {
+                            SectionSearchField(section: .live, prompt: "groups").padding(.horizontal)
+                            groupList
+                        }
+                        .navigationTitle("Groups")
+                        #if os(iOS)
+                        .navigationBarTitleDisplayMode(.inline)
+                        #endif
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showGroups = false } } }
+                    }
+                    .preferredColorScheme(.dark)
                 }
             } else {
                 HStack(alignment: .top, spacing: 0) {
@@ -70,7 +99,7 @@ struct LiveTVView: View {
                             Spacer()
                         }
                         .padding(.horizontal, 30.s)
-                        SectionSearchField(section: .live, prompt: "channels and what's on").padding(.horizontal, 30.s)
+                        SectionSearchField(section: .live, prompt: "groups, channels and what's on").padding(.horizontal, 30.s)
                         tagBar
                         ChannelList(channels: list, focused: $focused)
                     }
@@ -89,52 +118,160 @@ struct LiveTVView: View {
         }
     }
 
-    @ViewBuilder private var groupMenuItems: some View {
-        Button("All Channels") { groupKey = "all" }
-        Button("Favorites") { groupKey = "favorites" }
-        Button("Recently Watched") { groupKey = "recents" }
-        ForEach(groups) { g in Button(g.name) { pick(g) } }
-    }
-
+    /// Opens a group. Picking one ends a search, so the whole group is shown.
     private func pick(_ g: IPTVGroup) {
+        sq.clear(.live)
+        showGroups = false
         if store.isLocked(g) && !store.unlocked { pendingGroup = g.id; askPIN = true } else { groupKey = g.id }
     }
 
-    private var groupList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4.s) {
-                groupButton("All Channels", key: "all", icon: "square.grid.2x2")
-                groupButton("Favorites", key: "favorites", icon: "star.fill")
-                groupButton("Recently Watched", key: "recents", icon: "clock")
-                Divider().padding(.vertical, 10.s)
-                ForEach(groups) { g in
-                    Button { pick(g) } label: {
-                        HStack(spacing: 12.s) {
-                            if store.playlists.count > 1 { SourceDot(playlistID: g.playlistID) }
-                            Text(g.name).lineLimit(1)
-                            Spacer(minLength: 0)
-                            if store.isLocked(g) { Image(systemName: store.unlocked ? "lock.open" : "lock.fill").font(.caption) }
-                        }
-                        .padding(.horizontal, 20.s).padding(.vertical, 12.s)
-                        .background(RoundedRectangle(cornerRadius: 10.s).fill(groupKey == g.id ? .white.opacity(0.15) : .clear))
-                    }
-                    .buttonStyle(PanelRowStyle())
-                    .contextMenu { GroupMenu(group: g) }
-                }
-            }
-            .padding(.horizontal, 30.s).padding(.bottom, 60.s)
-        }
-        .tvFocusSection()
+    private func pick(key: String) {
+        sq.clear(.live)
+        showGroups = false
+        groupKey = key
     }
 
-    private func groupButton(_ title: String, key: String, icon: String) -> some View {
-        Button { groupKey = key } label: {
+    private var groupList: some View {
+        let list = shownGroups
+        return HStack(alignment: .top, spacing: 0) {
+            if letterStrip || !Platform.isTV { letterIndex(list) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4.s) {
+                        groupButton("All Channels", key: "all", icon: "square.grid.2x2", first: list.first)
+                        groupButton("Favorites", key: "favorites", icon: "star.fill", first: list.first)
+                        groupButton("Recently Watched", key: "recents", icon: "clock", first: list.first)
+                        Divider().padding(.vertical, 10.s)
+                        if list.isEmpty, sq.active(.live) {
+                            Text("No groups match.").foregroundStyle(.secondary).padding(.horizontal, 20.s)
+                        }
+                        ForEach(list) { g in groupRow(g).id(g.id) }
+                    }
+                    .padding(.horizontal, Platform.isTV ? 30.s : 16).padding(.bottom, 60.s)
+                }
+                .onChange(of: scrollTarget) { _, id in
+                    guard let id else { return }
+                    withAnimation { proxy.scrollTo(id, anchor: .top) }
+                    scrollTarget = nil
+                }
+            }
+            .tvFocusSection()
+        }
+    }
+
+    private func groupRow(_ g: IPTVGroup) -> some View {
+        Button { pick(g) } label: {
+            HStack(spacing: 12.s) {
+                if store.playlists.count > 1 { SourceDot(playlistID: g.playlistID) }
+                if store.isFavoriteGroup(g) { Text("★").foregroundStyle(.yellow) }
+                Text(g.name).lineLimit(1)
+                Spacer(minLength: 0)
+                if store.isLocked(g) { Image(systemName: store.unlocked ? "lock.open" : "lock.fill").font(.caption) }
+            }
+            .padding(.horizontal, 20.s).padding(.vertical, 12.s)
+            .background(RoundedRectangle(cornerRadius: 10.s).fill(groupKey == g.id ? .white.opacity(0.15) : .clear))
+        }
+        .buttonStyle(PanelRowStyle())
+        .focused($groupFocus, equals: g.id)
+        .contextMenu { GroupMenu(group: g) { refocus(g.id) } }
+        #if os(tvOS)
+        .onMoveCommand { if $0 == .left { openStrip(from: g) } }
+        #endif
+    }
+
+    private func groupButton(_ title: String, key: String, icon: String, first: IPTVGroup?) -> some View {
+        Button { pick(key: key) } label: {
             Label(title, systemImage: icon).lineLimit(1)
                 .padding(.horizontal, 20.s).padding(.vertical, 12.s)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 10.s).fill(groupKey == key ? .white.opacity(0.15) : .clear))
+                .background(RoundedRectangle(cornerRadius: 10.s).fill(groupKey == key && !sq.active(.live) ? .white.opacity(0.15) : .clear))
         }
         .buttonStyle(PanelRowStyle())
+        .focused($groupFocus, equals: key)
+        #if os(tvOS)
+        .onMoveCommand { if $0 == .left { openStrip(from: nil, key: key) } }
+        #endif
+    }
+
+    /// Keeps focus on a group after the list changed around it (a move or a favourite).
+    private func refocus(_ id: String) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            scrollTarget = id
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            groupFocus = id
+        }
+    }
+
+    // MARK: - A–Z
+
+    private func letter(_ g: IPTVGroup) -> String { store.groupSortKey(g.name).indexLetter }
+
+    private func openStrip(from g: IPTVGroup?, key: String? = nil) {
+        stripFrom = g?.id ?? key
+        let start = g.map(letter) ?? shownGroups.first(where: { !store.isFavoriteGroup($0) }).map(letter) ?? "A"
+        withAnimation(.easeOut(duration: 0.15)) { letterStrip = true }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            letterFocus = start
+        }
+    }
+
+    private func closeStrip() {
+        guard Platform.isTV, letterStrip else { return }
+        let back = stripFrom
+        withAnimation(.easeOut(duration: 0.15)) { letterStrip = false }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            groupFocus = back
+        }
+    }
+
+    /// Goes to the first group (after the favourites) starting with the letter, or the next letter that has one.
+    private func jump(to l: String, in list: [IPTVGroup]) {
+        let rest = list.filter { !store.isFavoriteGroup($0) }
+        let order = Self.letters
+        let li = order.firstIndex(of: l) ?? 0
+        let target = rest.first { letter($0) == l }
+            ?? rest.first { (order.firstIndex(of: letter($0)) ?? 0) > li }
+            ?? rest.last
+        guard let target else { return }
+        if Platform.isTV {
+            withAnimation(.easeOut(duration: 0.15)) { letterStrip = false }
+        }
+        scrollTarget = target.id
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            groupFocus = target.id
+        }
+    }
+
+    private func letterIndex(_ list: [IPTVGroup]) -> some View {
+        let present = Set(list.filter { !store.isFavoriteGroup($0) }.map(letter))
+        return ScrollView(showsIndicators: false) {
+            VStack(spacing: Platform.isTV ? 4.s : 0) {
+                ForEach(Self.letters, id: \.self) { l in
+                    Button { jump(to: l, in: list) } label: {
+                        Text(l).font(Platform.isTV ? .callout.bold() : .caption2.bold())
+                            .frame(width: Platform.isTV ? 64.s : 22, height: Platform.isTV ? 46.s : 17)
+                            .opacity(present.contains(l) ? 1 : 0.35)
+                    }
+                    .buttonStyle(PanelRowStyle())
+                    .focused($letterFocus, equals: l)
+                    #if os(tvOS)
+                    .onMoveCommand { if $0 == .right { closeStrip() } }
+                    #endif
+                }
+            }
+            .padding(.vertical, Platform.isTV ? 10.s : 4)
+        }
+        .frame(width: Platform.isTV ? 84.s : 26)
+        .background(Platform.isTV ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.clear), in: RoundedRectangle(cornerRadius: 12.s))
+        .tvFocusSection()
+        #if os(tvOS)
+        .onExitCommand { closeStrip() }
+        #endif
+        .transition(.move(edge: .leading).combined(with: .opacity))
     }
 
     /// Filter by picture and sound quality.
@@ -281,12 +418,27 @@ struct ChannelRow: View {
     }
 }
 
-/// Hide or lock a group.
+/// Favourite, move, lock or hide a group. Hide is last, so it isn't picked by accident.
 struct GroupMenu: View {
     let group: IPTVGroup
+    /// Called after the group moved in the list, to keep focus on it.
+    var moved: () -> Void = {}
     @ObservedObject private var store = IPTVStore.shared
     var body: some View {
-        Button { store.setHidden(group, true) } label: { Label("Hide Group", systemImage: "eye.slash") }
+        if store.isFavoriteGroup(group) {
+            Button { store.toggleFavoriteGroup(group); moved() } label: { Label("Remove from Favorite Groups", systemImage: "star.slash") }
+            if store.canMoveFavoriteGroup(group, .up) {
+                Button { store.moveFavoriteGroup(group, .up); moved() } label: { Label("Move Up", systemImage: "arrow.up") }
+            }
+            if store.canMoveFavoriteGroup(group, .down) {
+                Button { store.moveFavoriteGroup(group, .down); moved() } label: { Label("Move Down", systemImage: "arrow.down") }
+            }
+            if store.canMoveFavoriteGroup(group, .top) {
+                Button { store.moveFavoriteGroup(group, .top); moved() } label: { Label("Move to Top", systemImage: "arrow.up.to.line") }
+            }
+        } else {
+            Button { store.toggleFavoriteGroup(group); moved() } label: { Label("Add to Favorite Groups", systemImage: "star") }
+        }
         if store.pin.isEmpty {
             Text("Set a PIN in Playlists to lock groups")
         } else {
@@ -294,5 +446,6 @@ struct GroupMenu: View {
                 Label(store.isLocked(group) ? "Unlock Group" : "Lock Group with PIN", systemImage: "lock")
             }
         }
+        Button(role: .destructive) { store.setHidden(group, true) } label: { Label("Hide Group", systemImage: "eye.slash") }
     }
 }
