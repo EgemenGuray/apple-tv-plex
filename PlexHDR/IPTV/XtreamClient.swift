@@ -125,7 +125,8 @@ struct XtreamClient {
                 catchup: archive && days > 0 ? IPTVCatchup(mode: "xc", days: days, source: nil) : nil,
                 userAgent: userAgent, streamID: id))
         }
-        content.liveGroups = liveGroups.items.filter { g in content.channels.contains { $0.group == g } }
+        // Every live category the provider lists is shown, even one that has no channels right now.
+        content.liveGroups = liveGroups.items
 
         let (vodMap, vodOrder) = names((try? await vodCats) ?? [Any]())
         var movieGroups = OrderedSet()

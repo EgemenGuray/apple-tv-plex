@@ -366,14 +366,22 @@ final class IPTVPlayerController: ObservableObject {
     }
 
     func close() {
+        teardown()
+        onClose?()
+    }
+
+    /// Stops playback once, whether the player was closed or its screen went away some other way.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
         if let id = resumeID { store.savePosition(id, time, duration: duration) }
         hideTask?.cancel()
         stallTask?.cancel()
         NowPlaying.shared.clear(owner: self)
         layer?.delegate = nil
         layer?.stop()
-        onClose?()
     }
+    private var tornDown = false
 }
 
 extension IPTVPlayerController: KSPlayerLayerDelegate {
@@ -418,6 +426,8 @@ struct IPTVPlayerScreen: View {
     @ObservedObject private var store = IPTVStore.shared
     let request: IPTVPlayerPresenter.Request
     @FocusState private var rootFocused: Bool
+    /// A live channel's first Menu closed the panel or info bar; the next one leaves.
+    @State private var backArmed = false
 
     init(request: IPTVPlayerPresenter.Request) {
         self.request = request
@@ -479,6 +489,7 @@ struct IPTVPlayerScreen: View {
         }
         .onChange(of: c.panel) { _, p in if p == nil { rootFocused = true } }
         .onDisappear {
+            c.teardown()
             #if os(iOS)
             UIApplication.shared.isIdleTimerDisabled = false
             #endif
@@ -528,6 +539,7 @@ struct IPTVPlayerScreen: View {
     }
 
     private func select() {
+        backArmed = false
         if c.error != nil { c.retry(); return }
         if c.isLive {
             if c.overlayVisible { withAnimation { c.overlayVisible = false } } else { c.showOverlay(autoHide: true) }
@@ -537,6 +549,7 @@ struct IPTVPlayerScreen: View {
     }
 
     private func move(_ d: MoveCommandDirection) {
+        if d == .left || d == .right { backArmed = false }
         if c.isLive {
             switch d {
             case .up: c.zap(-1)
@@ -556,7 +569,19 @@ struct IPTVPlayerScreen: View {
         }
     }
 
+    /// Menu / Esc. A live channel always goes back to the channel list: at most the first press closes an open panel or
+    /// info bar, and the next one leaves, even if the info bar came back in between (a zap or a stall shows it).
     private func back() {
+        if c.isLive {
+            if !backArmed, c.panel != nil || c.overlayVisible {
+                backArmed = true
+                c.panel = nil
+                withAnimation { c.overlayVisible = false }
+                return
+            }
+            c.close()
+            return
+        }
         if c.panel != nil { c.panel = nil; c.hideSoon(); return }
         if c.overlayVisible && c.isPlaying { withAnimation { c.overlayVisible = false }; return }
         c.close()
