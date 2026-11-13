@@ -1,19 +1,107 @@
 import SwiftUI
 
 /// Each IPTV section's own search text. A section's search looks through the whole section, not just the open group.
+/// What is typed is applied after a short pause, so long lists aren't filtered again on every key.
 @MainActor
 final class IPTVSectionSearch: ObservableObject {
     static let shared = IPTVSectionSearch()
-    @Published var text: [IPTVSection: String] = [:]
+    /// What is in the field.
+    @Published var text: [IPTVSection: String] = [:] {
+        didSet { scheduleApply() }
+    }
+    /// What the lists filter by: `text` once typing pauses.
+    @Published private(set) var applied: [IPTVSection: String] = [:]
+    private var applyTask: Task<Void, Never>?
+    private var foldCache: [String: String] = [:]
 
-    func query(_ s: IPTVSection) -> String { (text[s] ?? "").trimmingCharacters(in: .whitespaces).lowercased() }
+    private func scheduleApply() {
+        // Clearing applies at once; typing waits for a pause.
+        for (k, v) in text where v.trimmingCharacters(in: .whitespaces).isEmpty && applied[k] != nil { applied[k] = nil }
+        applyTask?.cancel()
+        applyTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard let self, !Task.isCancelled else { return }
+            let next = self.text.filter { !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
+            if self.applied != next { self.applied = next }
+        }
+    }
+
+    /// Clears a section's search at once.
+    func clear(_ s: IPTVSection) {
+        text[s] = ""
+        applied[s] = nil
+    }
+
+    func query(_ s: IPTVSection) -> String { (applied[s] ?? "").trimmingCharacters(in: .whitespaces).searchFolded }
     func active(_ s: IPTVSection) -> Bool { !query(s).isEmpty }
 
-    /// True when the section isn't being searched, or any of the values contains its search text.
+    /// The words of a section's search, folded.
+    func words(_ s: IPTVSection) -> [String] {
+        let raw = applied[s] ?? ""
+        if let c = wordsCache[s], c.0 == raw { return c.1 }
+        let w = query(s).split(whereSeparator: \.isWhitespace).map(String.init)
+        wordsCache[s] = (raw, w)
+        return w
+    }
+    private var wordsCache: [IPTVSection: (String, [String])] = [:]
+
+    /// True when the section isn't being searched, or every word of its search is found in one of the values.
     func hits(_ s: IPTVSection, _ values: String?...) -> Bool {
-        let q = query(s)
-        if q.isEmpty { return true }
-        return values.contains { $0?.lowercased().contains(q) == true }
+        let w = words(s)
+        if w.isEmpty { return true }
+        let folded = values.compactMap { $0.map(fold) }
+        return w.allSatisfy { word in folded.contains { $0.contains(word) } }
+    }
+
+    /// Folds a value, remembering the result: channel names are folded again on every key otherwise.
+    func fold(_ v: String) -> String {
+        if let f = foldCache[v] { return f }
+        if foldCache.count > 300_000 { foldCache.removeAll(keepingCapacity: true) }
+        let f = v.searchFolded
+        foldCache[v] = f
+        return f
+    }
+}
+
+extension String {
+    /// For matching: lower case without accents, with Turkish İ/I/ı all as i, and superscript and small-capital
+    /// letters (ᴿᴬᵂ, ⁴ᴷ, ʜᴅ) as plain ones.
+    var searchFolded: String {
+        var s = precomposedStringWithCompatibilityMapping
+        if s.unicodeScalars.contains(where: { ($0.value >= 0x1D00 && $0.value <= 0x1DBF) || $0.value == 0x131 || $0.value == 0x130 || String.smallCaps[$0] != nil }) {
+            var out = String.UnicodeScalarView()
+            for u in s.unicodeScalars {
+                switch u.value {
+                case 0x130, 0x131: out.append("i")
+                default:
+                    if let r = String.smallCaps[u] { out.append(contentsOf: r.unicodeScalars) } else { out.append(u) }
+                }
+            }
+            s = String(out)
+        }
+        return s.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+    }
+
+    private static let smallCaps: [Unicode.Scalar: String] = {
+        let pairs: [(UInt32, String)] = [
+            (0x1D00, "a"), (0x0299, "b"), (0x1D04, "c"), (0x1D05, "d"), (0x1D07, "e"), (0xA730, "f"), (0x0262, "g"),
+            (0x029C, "h"), (0x026A, "i"), (0x1D0A, "j"), (0x1D0B, "k"), (0x029F, "l"), (0x1D0D, "m"), (0x0274, "n"),
+            (0x1D0F, "o"), (0x1D18, "p"), (0x0280, "r"), (0xA731, "s"), (0x1D1B, "t"), (0x1D1C, "u"), (0x1D20, "v"),
+            (0x1D21, "w"), (0x028F, "y"), (0x1D22, "z"), (0x1D2C, "a"), (0x1D2E, "b"), (0x1D30, "d"), (0x1D31, "e"),
+            (0x1D33, "g"), (0x1D34, "h"), (0x1D35, "i"), (0x1D36, "j"), (0x1D37, "k"), (0x1D38, "l"), (0x1D39, "m"),
+            (0x1D3A, "n"), (0x1D3C, "o"), (0x1D3E, "p"), (0x1D3F, "r"), (0x1D40, "t"), (0x1D41, "u"), (0x1D42, "w"),
+            (0x2C7D, "v"), (0x1D3B, "n"),
+        ]
+        var m: [Unicode.Scalar: String] = [:]
+        for (v, r) in pairs { if let u = Unicode.Scalar(v) { m[u] = r } }
+        return m
+    }()
+
+    /// The letter a name is filed under in an A–Z index: A–Z, or # for anything else.
+    var indexLetter: String {
+        guard let c = searchFolded.first(where: { !$0.isWhitespace && !"|-:[]()★*.".contains($0) }), let a = c.unicodeScalars.first,
+              a.value >= 97 && a.value <= 122 else { return "#" }
+        return String(c).uppercased()
     }
 }
 
@@ -32,7 +120,7 @@ struct SectionSearchField: View {
             }
             .frame(maxWidth: Platform.isPhone ? .infinity : 620.s)
             if !text.wrappedValue.isEmpty {
-                Button { sq.text[section] = "" } label: { Image(systemName: "xmark.circle.fill") }
+                Button { sq.clear(section) } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)
             }
         }

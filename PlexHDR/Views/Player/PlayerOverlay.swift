@@ -45,11 +45,11 @@ struct PlayerOverlay: View {
             if let ch = c.currentChapter { Text(ch.title).font(.caption).foregroundStyle(.secondary) }
             Timeline(c: c).frame(height: 14.s)
             HStack {
-                Text(formatTime(c.scrubTime ?? c.time)).monospacedDigit()
+                Text(formatTime(c.displayTime)).monospacedDigit()
                 Spacer()
                 Text(endsAt).foregroundStyle(.secondary)
                 Spacer()
-                Text("-" + formatTime(max(0, c.duration - (c.scrubTime ?? c.time)))).monospacedDigit()
+                Text("-" + formatTime(max(0, c.duration - c.displayTime))).monospacedDigit()
             }
             .font(.caption)
         }
@@ -81,6 +81,10 @@ struct Timeline: View {
                 // Chapter ticks.
                 ForEach(Array(c.chapters.dropFirst().enumerated()), id: \.offset) { _, ch in
                     Rectangle().fill(.black.opacity(0.7)).frame(width: 3.s, height: 8.s).offset(x: w * ch.start / d)
+                }
+                if c.scrubTime == nil, c.pendingSkip != nil {
+                    // Where the accumulated ◀ ▶ presses will land.
+                    Rectangle().fill(.white).frame(width: 4.s, height: 22.s).offset(x: w * c.displayTime / d - 2)
                 }
                 if let s = c.scrubTime {
                     let x = w * s / d
