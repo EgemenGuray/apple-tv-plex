@@ -299,6 +299,12 @@ final class PlexClient: ObservableObject {
     }
 
     /// Next episode after this one: the next in its season, else the first episode of the next season.
+    /// Drops an item from On Deck / Continue Watching without changing its progress.
+    func removeFromContinueWatching(ratingKey: String) async {
+        guard let server else { return }
+        _ = try? await request("PUT", Self.url(server.uri, "/actions/removeFromContinueWatching", ["ratingKey": ratingKey]), token: server.token)
+    }
+
     func nextEpisode(after ep: PlexItem) async -> PlexItem? {
         guard ep.type == "episode", let season = ep.parentRatingKey else { return nil }
         let eps = (try? await children(season)) ?? []

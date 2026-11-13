@@ -39,6 +39,7 @@ struct ShowView: View {
             episodes = (try? await PlexClient.shared.children(seasonKey)) ?? []
         }
         .onChange(of: presenter.playbackEnded) { _, _ in Task { await load() } }
+        .environment(\.cardChanged, { _ in Task { await load() } })
     }
 
     private var header: some View {
@@ -105,6 +106,7 @@ struct ShowView: View {
                         .frame(width: 480.s, alignment: .leading)
                     }
                     .buttonStyle(LiftButtonStyle())
+                    .plexCardMenu(ep)
                 }
             }
             .padding(.horizontal, 80.s).padding(.vertical, 30.s)

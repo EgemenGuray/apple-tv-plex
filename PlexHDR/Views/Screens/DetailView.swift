@@ -37,6 +37,7 @@ struct DetailView: View {
         .ignoresSafeArea(edges: .top)
         .task { await load() }
         .onChange(of: presenter.playbackEnded) { _, _ in Task { await load() } }
+        .environment(\.cardChanged, { _ in Task { await load() } })
         .sheet(item: $sheet) { s in
             Group {
                 switch s {

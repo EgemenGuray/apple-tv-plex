@@ -9,7 +9,7 @@ struct RootView: View {
     var body: some View {
         Group {
             if plex.token == nil && iptv.iptvOnly {
-                IPTVOnlyTabs()
+                AppTabs(plexSignedIn: false)
             } else if plex.token == nil {
                 SignInView()
             } else if plex.server == nil {
@@ -45,29 +45,7 @@ extension View {
 }
 
 struct MainTabs: View {
-    @EnvironmentObject private var plex: PlexClient
-    @State private var sections: [PlexSection] = []
-    @State private var tab = "home"
-
-    var body: some View {
-        TabView(selection: $tab) {
-            NavigationStack { HomeView().withRoutes() }
-                .tabItem { Text("Home") }.tag("home")
-            IPTVHome()
-                .tabItem { Text("Live TV") }.tag("iptv")
-            ForEach(sections.filter(\.isVideo)) { s in
-                NavigationStack { LibraryView(section: s).withRoutes() }
-                    .tabItem { Text(s.title) }.tag("lib-\(s.id)")
-            }
-            NavigationStack { SearchView().withRoutes() }
-                .tabItem { Image(systemName: "magnifyingglass") }.tag("search")
-            NavigationStack { SettingsView() }
-                .tabItem { Image(systemName: "gearshape") }.tag("settings")
-        }
-        .task(id: plex.server?.machineId) {
-            sections = (try? await plex.sections()) ?? []
-        }
-    }
+    var body: some View { AppTabs(plexSignedIn: true) }
 }
 
 extension View {
